@@ -5,14 +5,18 @@ import {
   ArrowLeft, MapPin, KeyRound, Clock, Users, BedDouble, Bath, DollarSign,
   Pencil, ImagePlus, ClipboardList, Building2,
 } from "lucide-react";
-import type { Property, Customer } from "@shared/schema";
+import type { Property, Customer, Job } from "@shared/schema";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { StatusBadge } from "@/components/status-badge";
 import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 
 export default function PropertyDetailPage() {
   const params = useParams<{ id: string }>();
@@ -34,6 +38,15 @@ export default function PropertyDetailPage() {
       const res = await apiRequest("GET", `/api/customers/${property!.customerId}`);
       return res.json();
     },
+  });
+
+  const { data: jobHistory = [], isLoading: loadingJobs } = useQuery<Job[]>({
+    queryKey: ["/api/jobs", { propertyId }],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/jobs?propertyId=${propertyId}`);
+      return res.json();
+    },
+    enabled: !!property,
   });
 
   if (isLoading) {
@@ -58,24 +71,26 @@ export default function PropertyDetailPage() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Link href="/properties">
           <Button size="icon" variant="ghost" data-testid="button-back-properties">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-xl font-semibold flex-1 truncate" data-testid="text-property-name">
+        <h1 className="text-xl font-semibold min-w-0 basis-full sm:basis-auto sm:flex-1 truncate" data-testid="text-property-name">
           {property.name}
         </h1>
-        <Badge variant="outline" className="capitalize">{property.unitType}</Badge>
-        {property.active ? (
-          <Badge variant="outline" className="bg-status-completed-bg text-status-completed border-transparent">Active</Badge>
-        ) : (
-          <Badge variant="outline" className="bg-status-canceled-bg text-status-canceled border-transparent">Inactive</Badge>
-        )}
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)} data-testid="button-edit-property">
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="capitalize">{property.unitType}</Badge>
+          {property.active ? (
+            <Badge variant="outline" className="bg-status-completed-bg text-status-completed border-transparent">Active</Badge>
+          ) : (
+            <Badge variant="outline" className="bg-status-canceled-bg text-status-canceled border-transparent">Inactive</Badge>
+          )}
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)} data-testid="button-edit-property">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+        </div>
       </div>
 
       {customer && (
@@ -191,12 +206,43 @@ export default function PropertyDetailPage() {
           <CardTitle className="text-base">Job History</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center gap-2 py-8 text-center" data-testid="empty-job-history">
-            <ClipboardList className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No job history yet. Jobs will appear here once Scheduling/Jobs launches in Phase 2.
-            </p>
-          </div>
+          {loadingJobs ? (
+            <Skeleton className="h-32 w-full" />
+          ) : jobHistory.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-8 text-center" data-testid="empty-job-history">
+              <ClipboardList className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                No job history yet for this property.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <Table className="min-w-[420px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Date</TableHead>
+                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Type</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Price</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobHistory
+                    .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate))
+                    .map((j) => (
+                      <TableRow key={j.id} data-testid={`row-property-job-${j.id}`}>
+                        <TableCell className="whitespace-nowrap">
+                          <Link href={`/jobs/${j.id}`} className="hover:underline tabular-nums">{formatDate(j.scheduledDate)}</Link>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell capitalize whitespace-nowrap">{j.jobType.replace("_", " ")}</TableCell>
+                        <TableCell className="whitespace-nowrap"><StatusBadge status={j.status} /></TableCell>
+                        <TableCell className="text-right tabular-nums whitespace-nowrap">{formatMoney(j.price)}</TableCell>
+                      </TableRow>
+                    ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

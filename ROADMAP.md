@@ -1,10 +1,14 @@
 # Ridgeline — Roadmap
 
-## Phase 1 (this build) — Foundation
+Phases 1-3 below are complete and shipped in this build. "Phase 2 of the
+business roadmap" (last section) is the forward-looking list — the features
+not yet built.
+
+## Phase 1 — Foundation
 
 - Brand system, logo, Fontshare typography, teal/slate palette with full
   status color coding.
-- Complete 13-table data model (`shared/schema.ts`), SQLite dev database.
+- Complete 14-table data model (`shared/schema.ts`), SQLite dev database.
 - Full CRUD for **customers, contacts, properties, notes**.
 - App shell: sidebar (all 8 sections), header (global search, theme toggle,
   quick-action dropdown, role selector).
@@ -18,11 +22,11 @@
   validation.
 - Seed data: 8 customers, 16 properties, 5 staff, 5 job templates —
   realistic White Mountains, NH sample data.
-- Scheduling / Jobs / Invoices / Reports / Settings: sidebar-linked
-  "Coming soon" stub pages (no 404s), storage layer scaffolded for all
-  remaining tables so Phase 2/3 can extend without refactoring.
+- Scheduling / Jobs / Invoices / Reports / Settings launched as "Coming
+  soon" stub pages in Phase 1 (no 404s), storage layer scaffolded for all
+  remaining tables — replaced by full implementations in Phase 2/3 below.
 
-## Phase 2 — Scheduling & Jobs
+## Phase 2 — Scheduling & Jobs (complete)
 
 - Scheduling page: day/week/month calendar, color-coded job chips by
   status, click-to-create job flow, staff/job-type/property filters.
@@ -31,10 +35,11 @@
   notes, status stepper (scheduled → in progress → completed → invoiced).
 - Recurring schedules (`schedules` table) generating job instances.
 - Seed realistic job data across the last/next 2 weeks in every status.
-- Drag-and-drop calendar rescheduling.
-- Route optimization for staff (multi-stop day planning).
 
-## Phase 3 — Invoicing & Settings
+Not yet built (carried to "Phase 2 of the business roadmap" below):
+drag-and-drop calendar rescheduling, route optimization for staff.
+
+## Phase 3 — Invoicing & Settings (complete)
 
 - Invoices list + create (from completed job or fully manual) + printable
   detail view + record-payment flow updating `amountPaid`/status.
@@ -46,8 +51,14 @@
   Notifications (static toggles).
 - Seed realistic invoice data (paid, overdue, partial, draft) tied to
   completed jobs.
+- Wrap-up pass: full schema docs (incl. `app_settings`), clean
+  `tsc --noEmit` and reproducible `npm run build`, dark-mode/375px mobile QA
+  across Customers/Properties/Scheduling/Jobs.
 
-## Beyond Phase 3 — Future Enhancements
+## Phase 2 of the business roadmap — Future Enhancements
+
+Everything below is **not yet built**. This is the actual "what's next"
+list referenced from the README.
 
 - **Real authentication** — Supabase Auth with admin/office/cleaner roles
   enforced server-side (replacing the static role selector in the header).

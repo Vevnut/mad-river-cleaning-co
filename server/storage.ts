@@ -1,6 +1,6 @@
 import {
   customers, contacts, properties, staff, jobTemplates, serviceChecklists,
-  schedules, jobs, invoices, invoiceItems, payments, notes, attachments,
+  schedules, jobs, invoices, invoiceItems, payments, notes, attachments, appSettings,
 } from "@shared/schema";
 import type {
   Customer, InsertCustomer,
@@ -16,6 +16,7 @@ import type {
   Payment, InsertPayment,
   Note, InsertNote,
   Attachment, InsertAttachment,
+  AppSettings, InsertAppSettings,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -124,6 +125,10 @@ export interface IStorage {
   getAttachments(entityType: string, entityId: number): Promise<Attachment[]>;
   createAttachment(data: InsertAttachment): Promise<Attachment>;
   deleteAttachment(id: number): Promise<boolean>;
+
+  // --- app_settings (singleton, Phase 3) ---
+  getSettings(): Promise<AppSettings>;
+  updateSettings(data: Partial<InsertAppSettings>): Promise<AppSettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -365,6 +370,27 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteAttachment(id: number): Promise<boolean> {
     return db.delete(attachments).where(eq(attachments.id, id)).run().changes > 0;
+  }
+
+  // ---------------- app_settings (singleton) ----------------
+  async getSettings(): Promise<AppSettings> {
+    const existing = db.select().from(appSettings).where(eq(appSettings.id, 1)).get();
+    if (existing) return existing;
+    return db.insert(appSettings).values({
+      id: 1,
+      businessName: "Ridgeline Cleaning Ops",
+      businessAddress: "118 White Mountain Hwy, Conway, NH 03818",
+      businessPhone: "603-555-0100",
+      businessEmail: "office@ridgelinecleaningops.com",
+      defaultTaxRate: 0.08,
+      defaultPaymentTermsDays: 15,
+      invoiceNumberPrefix: "INV",
+      invoiceFooterNote: "Thank you for choosing Ridgeline Cleaning Ops. Payment due within terms noted above.",
+    } as InsertAppSettings).returning().get();
+  }
+  async updateSettings(data: Partial<InsertAppSettings>): Promise<AppSettings> {
+    const current = await this.getSettings();
+    return db.update(appSettings).set(data).where(eq(appSettings.id, current.id)).returning().get();
   }
 }
 

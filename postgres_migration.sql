@@ -244,3 +244,28 @@ create table attachments (
 );
 
 create index idx_attachments_entity on attachments(entity_type, entity_id);
+
+-- ---------------------------------------------------------------------------
+-- 14. app_settings — singleton row (id always 1)
+-- Business info + invoice defaults consumed by invoice creation & print view.
+-- ---------------------------------------------------------------------------
+create table app_settings (
+  id                            uuid primary key default gen_random_uuid(),
+  business_name                 text not null default 'Ridgeline Cleaning Ops',
+  business_address              text not null default '',
+  business_phone                text not null default '',
+  business_email                text not null default '',
+  logo_placeholder              text,
+  default_tax_rate              numeric(5,4) not null default 0,
+  default_payment_terms_days    integer not null default 15,
+  invoice_number_prefix         text not null default 'INV',
+  invoice_footer_note           text not null default 'Thank you for your business.',
+  notify_job_reminders          boolean not null default true,
+  notify_invoice_overdue        boolean not null default true,
+  notify_payment_received       boolean not null default true,
+  notify_daily_digest           boolean not null default false,
+  -- enforce a true singleton row at the DB level (mirrors the app's
+  -- "id = 1 always" convention from server/storage.ts, expressed here via a
+  -- constant unique column since uuid PKs can't be pinned to a literal id)
+  singleton_guard                boolean not null default true unique
+);

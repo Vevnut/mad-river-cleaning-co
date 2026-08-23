@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   CalendarCheck, CalendarClock, CircleAlert, DollarSign, Users,
   Plus, TrendingUp, TrendingDown, Home, ClipboardList, Receipt,
@@ -8,7 +8,7 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
 } from "recharts";
-import type { Customer, Job, Invoice, Staff } from "@shared/schema";
+import type { Customer, Job, Invoice, Staff, Property } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,16 +23,13 @@ interface DashboardPageProps {
   onNewProperty: () => void;
 }
 
-const REVENUE_TREND = [
-  { month: "Mar", revenue: 0 },
-  { month: "Apr", revenue: 0 },
-  { month: "May", revenue: 0 },
-  { month: "Jun", revenue: 0 },
-  { month: "Jul", revenue: 0 },
-  { month: "Aug", revenue: 0 },
-];
+function monthLabel(key: string): string {
+  const [y, m] = key.split("-");
+  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", { month: "short" });
+}
 
 export default function DashboardPage({ onNewCustomer, onNewProperty }: DashboardPageProps) {
+  const [, navigate] = useLocation();
   const { data: customers = [], isLoading: loadingCustomers } = useQuery<Customer[]>({
     queryKey: ["/api/customers"],
   });
@@ -41,6 +38,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
     queryKey: ["/api/invoices"],
   });
   const { data: staffList = [] } = useQuery<Staff[]>({ queryKey: ["/api/staff"] });
+  const { data: properties = [] } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -54,9 +52,29 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
     });
     const overdueInvoices = invoices.filter((i) => i.status === "overdue");
     const overdueTotal = overdueInvoices.reduce((sum, i) => sum + (i.total - i.amountPaid), 0);
-    const monthlyRevenue = invoices
-      .filter((i) => i.status === "paid" || i.status === "partial")
-      .reduce((sum, i) => sum + i.amountPaid, 0);
+
+    const thisMonthKey = today.slice(0, 7);
+    const lastMonthDate = new Date();
+    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
+    const lastMonthKey = lastMonthDate.toISOString().slice(0, 7);
+
+    const revenueForMonth = (key: string) =>
+      invoices.filter((i) => i.issueDate.startsWith(key)).reduce((sum, i) => sum + i.total, 0);
+
+    const monthlyRevenue = revenueForMonth(thisMonthKey);
+    const lastMonthRevenue = revenueForMonth(lastMonthKey);
+    const delta = lastMonthRevenue > 0
+      ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
+      : monthlyRevenue > 0 ? 100 : 0;
+
+    // Revenue by month for the trailing 6 months (real invoice data).
+    const revenueTrend: Array<{ month: string; revenue: number }> = [];
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date();
+      d.setMonth(d.getMonth() - i);
+      const key = d.toISOString().slice(0, 7);
+      revenueTrend.push({ month: monthLabel(key), revenue: Math.round(revenueForMonth(key) * 100) / 100 });
+    }
 
     return {
       todaysJobsCount: todaysJobs.length,
@@ -64,13 +82,18 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       overdueCount: overdueInvoices.length,
       overdueTotal,
       monthlyRevenue,
+      revenueDelta: delta,
       activeCustomers: customers.length,
+      revenueTrend,
+      hasAnyInvoices: invoices.length > 0,
     };
   }, [jobs, invoices, customers, today]);
 
   const isLoading = loadingCustomers || loadingJobs || loadingInvoices;
 
   const staffById = (id: number | null) => staffList.find((s) => s.id === id);
+  const propertyById = (id: number) => properties.find((p) => p.id === id);
+  const customerById = (id: number) => customers.find((c) => c.id === id);
 
   return (
     <div className="space-y-6 p-4 md:p-6">
@@ -83,10 +106,10 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           <Button size="sm" variant="outline" className="gap-1.5" onClick={onNewProperty} data-testid="button-quick-new-property">
             <Plus className="h-3.5 w-3.5" /> New Property
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" disabled data-testid="button-quick-new-job">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate("/scheduling")} data-testid="button-quick-new-job">
             <Plus className="h-3.5 w-3.5" /> New Job
           </Button>
-          <Button size="sm" variant="outline" className="gap-1.5" disabled data-testid="button-quick-new-invoice">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => navigate("/invoices/new")} data-testid="button-quick-new-invoice">
             <Plus className="h-3.5 w-3.5" /> New Invoice
           </Button>
         </div>
@@ -121,7 +144,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           icon={DollarSign}
           label="Monthly Revenue"
           value={formatMoney(kpis.monthlyRevenue)}
-          delta={0}
+          delta={kpis.revenueDelta}
           loading={isLoading}
           testId="monthly-revenue"
         />
@@ -157,15 +180,27 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
               <ul className="space-y-2">
                 {jobs
                   .filter((j) => j.scheduledDate === today)
-                  .map((job) => (
-                    <li key={job.id} className="flex items-center justify-between rounded-md border p-2.5 text-sm">
-                      <div>
-                        <p className="font-medium">Property #{job.propertyId}</p>
-                        <p className="text-xs text-muted-foreground">{job.scheduledTime}</p>
-                      </div>
-                      <StatusBadge status={job.status} />
-                    </li>
-                  ))}
+                  .map((job) => {
+                    const property = propertyById(job.propertyId);
+                    const assignedStaff = staffById(job.assignedStaffId);
+                    return (
+                      <li key={job.id}>
+                        <Link
+                          href={`/jobs/${job.id}`}
+                          className="flex items-center justify-between rounded-md border p-2.5 text-sm hover-elevate"
+                          data-testid={`link-today-job-${job.id}`}
+                        >
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{property?.name ?? `Property #${job.propertyId}`}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {job.scheduledTime} &middot; {assignedStaff ? assignedStaff.name : "Unassigned"}
+                            </p>
+                          </div>
+                          <StatusBadge status={job.status} />
+                        </Link>
+                      </li>
+                    );
+                  })}
               </ul>
             )}
           </CardContent>
@@ -237,9 +272,17 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
                   {invoices
                     .filter((i) => i.status === "overdue")
                     .map((inv) => (
-                      <TableRow key={inv.id}>
-                        <TableCell>#{inv.customerId}</TableCell>
-                        <TableCell>{inv.invoiceNumber}</TableCell>
+                      <TableRow key={inv.id} data-testid={`row-dashboard-overdue-${inv.id}`}>
+                        <TableCell>
+                          <Link href={`/customers/${inv.customerId}`} className="hover:underline">
+                            {customerById(inv.customerId)?.name ?? `Customer #${inv.customerId}`}
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/invoices/${inv.id}`} className="hover:underline font-medium">
+                            {inv.invoiceNumber}
+                          </Link>
+                        </TableCell>
                         <TableCell>{formatDate(inv.dueDate)}</TableCell>
                         <TableCell className="text-right tabular-nums">
                           {formatMoney(inv.total - inv.amountPaid)}
@@ -264,12 +307,12 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
         <CardContent>
           <div className="h-[220px] w-full">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={REVENUE_TREND}>
+              <BarChart data={kpis.revenueTrend}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
                 <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
                 <YAxis tickLine={false} axisLine={false} fontSize={12} width={36} />
                 <Tooltip
-                  formatter={(v: number) => formatMoney(v)}
+                  formatter={(v: number) => formatMoney(v as number)}
                   contentStyle={{
                     borderRadius: 8,
                     fontSize: 12,
@@ -281,9 +324,11 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
               </BarChart>
             </ResponsiveContainer>
           </div>
-          <p className="mt-2 text-xs text-muted-foreground" data-testid="text-revenue-note">
-            No invoices recorded yet — revenue chart will populate once jobs and invoices are added in Phase 2/3.
-          </p>
+          {!kpis.hasAnyInvoices && (
+            <p className="mt-2 text-xs text-muted-foreground" data-testid="text-revenue-note">
+              No invoices recorded yet — the chart will populate as invoices are created.
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

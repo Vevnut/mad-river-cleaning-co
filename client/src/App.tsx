@@ -20,7 +20,11 @@ import PropertyDetailPage from "@/pages/property-detail";
 import SchedulingPage from "@/pages/scheduling";
 import JobsListPage from "@/pages/jobs-list";
 import JobDetailPage from "@/pages/job-detail";
-import { ComingSoonPage } from "@/pages/coming-soon";
+import InvoicesListPage from "@/pages/invoices-list";
+import InvoiceDetailPage from "@/pages/invoice-detail";
+import InvoiceNewPage from "@/pages/invoice-new";
+import ReportsPage from "@/pages/reports";
+import SettingsPage from "@/pages/settings";
 
 function AppRouter({
   onNewCustomer,
@@ -41,15 +45,11 @@ function AppRouter({
       <Route path="/scheduling" component={SchedulingPage} />
       <Route path="/jobs" component={JobsListPage} />
       <Route path="/jobs/:id" component={JobDetailPage} />
-      <Route path="/invoices">
-        <ComingSoonPage title="Invoices" />
-      </Route>
-      <Route path="/reports">
-        <ComingSoonPage title="Reports" />
-      </Route>
-      <Route path="/settings">
-        <ComingSoonPage title="Settings" />
-      </Route>
+      <Route path="/invoices/new" component={InvoiceNewPage} />
+      <Route path="/invoices/:id" component={InvoiceDetailPage} />
+      <Route path="/invoices" component={InvoicesListPage} />
+      <Route path="/reports" component={ReportsPage} />
+      <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />
     </Switch>
   );

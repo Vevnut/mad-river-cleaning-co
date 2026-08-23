@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, Link } from "wouter";
+import { useParams, Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, Home, Building2, Clock, User, DollarSign, Plus, X,
@@ -36,6 +36,7 @@ export default function JobDetailPage() {
   const params = useParams<{ id: string }>();
   const jobId = Number(params.id);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data: job, isLoading } = useQuery<Job>({
     queryKey: ["/api/jobs", jobId],
@@ -130,6 +131,21 @@ export default function JobDetailPage() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId, "checklist"] }),
   });
 
+  const generateInvoice = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/invoices/generate-from-job/${jobId}`, {});
+      return res.json();
+    },
+    onSuccess: (invoice) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs", jobId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({ title: "Invoice generated", description: `Created ${invoice.invoiceNumber}.` });
+      navigate(`/invoices/${invoice.id}`);
+    },
+    onError: (err: Error) => toast({ title: "Failed to generate invoice", description: err.message, variant: "destructive" }),
+  });
+
   const completedCount = checklist.filter((c) => c.isCompleted).length;
 
   const handleSaveSchedule = () => {
@@ -178,7 +194,7 @@ export default function JobDetailPage() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-xl font-semibold flex-1 truncate" data-testid="text-job-title">
+        <h1 className="text-xl font-semibold min-w-0 basis-full sm:basis-auto sm:flex-1 truncate" data-testid="text-job-title">
           {property?.name ?? `Property #${job.propertyId}`}
         </h1>
         <StatusBadge status={job.status} />
@@ -246,18 +262,44 @@ export default function JobDetailPage() {
                 <Ban className="h-3.5 w-3.5" /> Cancel Job
               </Button>
             )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span>
-                  <Button size="sm" variant="outline" disabled className="gap-1.5" data-testid="button-generate-invoice">
-                    <Receipt className="h-3.5 w-3.5" /> Generate Invoice
-                  </Button>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent>
-                Available once Invoices ships in Phase 3.
-              </TooltipContent>
-            </Tooltip>
+            {job.status === "completed" ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-1.5"
+                onClick={() => generateInvoice.mutate()}
+                disabled={generateInvoice.isPending}
+                data-testid="button-generate-invoice"
+              >
+                <Receipt className="h-3.5 w-3.5" /> Generate Invoice
+              </Button>
+            ) : job.status === "invoiced" ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button size="sm" variant="outline" disabled className="gap-1.5" data-testid="button-generate-invoice">
+                      <Receipt className="h-3.5 w-3.5" /> Generate Invoice
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  This job has already been invoiced.
+                </TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span>
+                    <Button size="sm" variant="outline" disabled className="gap-1.5" data-testid="button-generate-invoice">
+                      <Receipt className="h-3.5 w-3.5" /> Generate Invoice
+                    </Button>
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Mark this job Complete before generating an invoice.
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </CardContent>
       </Card>

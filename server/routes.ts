@@ -12,11 +12,20 @@ import {
   insertServiceChecklistSchema,
   insertScheduleSchema,
   insertJobSchema,
+  insertInvoiceSchema,
+  insertInvoiceItemSchema,
+  insertPaymentSchema,
+  insertAttachmentSchema,
+  insertAppSettingsSchema,
 } from "@shared/schema";
 import type {
   InsertCustomer, InsertContact, InsertProperty, InsertNote,
   InsertStaff, InsertJobTemplate, InsertServiceChecklist, InsertSchedule, InsertJob,
+  InsertInvoice, InsertInvoiceItem, InsertPayment, InsertAttachment, InsertAppSettings,
+  InvoiceItem,
 } from "@shared/schema";
+import { computeInvoiceTotals, deriveInvoiceStatus, round2 } from "./invoice-utils";
+import { renderInvoicePrintHtml } from "./invoice-print-template";
 
 // NOTE: drizzle-zod@0.7.1 + zod@4.4.3 infer enum-typed insert schema fields as
 // a broken union (see SCHEMA.md). Runtime validation via `safeParse` below is
@@ -381,12 +390,375 @@ export async function registerRoutes(
   });
 
   // =========================================================================
-  // Invoices — minimal read endpoint so Dashboard KPIs have a data source.
-  // Full CRUD lands in Phase 3.
+  // Invoices — full CRUD (Phase 3). Totals are always recomputed server-side
+  // from line items + fees/discount/tax so the client can never spoof them.
   // =========================================================================
-  app.get("/api/invoices", async (_req, res) => {
-    const data = await storage.getInvoices();
+  app.get("/api/invoices", async (req, res) => {
+    const customerId = req.query.customerId ? Number(req.query.customerId) : undefined;
+    const data = customerId
+      ? await storage.getInvoicesByCustomer(customerId)
+      : await storage.getInvoices();
     res.json(data);
+  });
+
+  app.get("/api/invoices/:id", async (req, res) => {
+    const invoice = await storage.getInvoice(Number(req.params.id));
+    if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+    res.json(invoice);
+  });
+
+  // Create a manual invoice with an initial set of line items.
+  app.post("/api/invoices", async (req, res) => {
+    const { items, ...invoiceBody } = req.body ?? {};
+    const parsed = insertInvoiceSchema.safeParse(invoiceBody);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid invoice data", errors: parsed.error.issues });
+    }
+    const itemRows: Array<{ description: string; itemType: string; quantity: number; unitPrice: number }> =
+      Array.isArray(items) ? items : [];
+    const computedItems = itemRows.map((it) => ({
+      description: String(it.description ?? ""),
+      itemType: String(it.itemType ?? "service"),
+      quantity: Number(it.quantity ?? 1),
+      unitPrice: Number(it.unitPrice ?? 0),
+      amount: round2(Number(it.quantity ?? 1) * Number(it.unitPrice ?? 0)),
+    }));
+    const discountAmount = Number(parsed.data.discountAmount ?? 0);
+    const taxRate = Number(parsed.data.taxRate ?? 0);
+    const travelFee = Number(parsed.data.travelFee ?? 0);
+    const rushFee = Number(parsed.data.rushFee ?? 0);
+    const { subtotal, taxAmount, total } = computeInvoiceTotals({
+      items: computedItems,
+      discountAmount,
+      taxRate,
+      travelFee,
+      rushFee,
+    });
+    const amountPaid = Number(parsed.data.amountPaid ?? 0);
+    const status = deriveInvoiceStatus({
+      currentStatus: String(parsed.data.status ?? "draft"),
+      dueDate: String(parsed.data.dueDate),
+      total,
+      amountPaid,
+    });
+
+    const invoice = await storage.createInvoice({
+      ...(parsed.data as InsertInvoice),
+      subtotal,
+      discountAmount,
+      taxRate,
+      taxAmount,
+      travelFee,
+      rushFee,
+      total,
+      amountPaid,
+      status,
+    });
+
+    for (let i = 0; i < computedItems.length; i++) {
+      await storage.createInvoiceItem({ ...computedItems[i], invoiceId: invoice.id, sortOrder: i } as InsertInvoiceItem);
+    }
+
+    res.status(201).json(invoice);
+  });
+
+  // Generate an invoice directly from a completed job — pre-fills customer +
+  // one service line item from the job's price (spec requirement).
+  app.post("/api/invoices/generate-from-job/:jobId", async (req, res) => {
+    const job = await storage.getJob(Number(req.params.jobId));
+    if (!job) return res.status(404).json({ message: "Job not found" });
+    if (job.status !== "completed") {
+      return res.status(400).json({ message: "Only completed jobs can be invoiced" });
+    }
+
+    const settings = await storage.getSettings();
+    const property = await storage.getProperty(job.propertyId);
+    const issueDate = new Date().toISOString().slice(0, 10);
+    const due = new Date();
+    due.setDate(due.getDate() + settings.defaultPaymentTermsDays);
+    const dueDate = due.toISOString().slice(0, 10);
+
+    const existingInvoices = await storage.getInvoices();
+    const nextNum = existingInvoices.length + 1;
+    const invoiceNumber = `${settings.invoiceNumberPrefix}-${String(nextNum).padStart(4, "0")}-${job.id}`;
+
+    const description = `${job.jobType.replace("_", " ")} clean — ${property?.name ?? "Property #" + job.propertyId}`;
+    const items = [
+      { description, itemType: "service" as const, quantity: 1, unitPrice: job.price, amount: round2(job.price) },
+    ];
+    const taxRate = settings.defaultTaxRate;
+    const { subtotal, taxAmount, total } = computeInvoiceTotals({
+      items, discountAmount: 0, taxRate, travelFee: 0, rushFee: 0,
+    });
+
+    const invoice = await storage.createInvoice({
+      customerId: job.customerId,
+      jobId: job.id,
+      invoiceNumber,
+      issueDate,
+      dueDate,
+      status: "draft",
+      subtotal,
+      discountAmount: 0,
+      taxRate,
+      taxAmount,
+      travelFee: 0,
+      rushFee: 0,
+      total,
+      amountPaid: 0,
+      notes: null,
+    } as InsertInvoice);
+
+    await storage.createInvoiceItem({ ...items[0], invoiceId: invoice.id, sortOrder: 0 } as InsertInvoiceItem);
+    await storage.updateJob(job.id, { status: "invoiced" });
+
+    res.status(201).json(invoice);
+  });
+
+  // Recompute + patch an invoice's editable fields (discount/tax/fees/status/etc).
+  app.patch("/api/invoices/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const existing = await storage.getInvoice(id);
+    if (!existing) return res.status(404).json({ message: "Invoice not found" });
+
+    const parsed = insertInvoiceSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid invoice data", errors: parsed.error.issues });
+    }
+
+    const merged = { ...existing, ...parsed.data };
+    const items = await storage.getInvoiceItems(id);
+    const { subtotal, taxAmount, total } = computeInvoiceTotals({
+      items,
+      discountAmount: Number(merged.discountAmount ?? 0),
+      taxRate: Number(merged.taxRate ?? 0),
+      travelFee: Number(merged.travelFee ?? 0),
+      rushFee: Number(merged.rushFee ?? 0),
+    });
+    const amountPaid = Number(merged.amountPaid ?? 0);
+    const status = deriveInvoiceStatus({
+      currentStatus: String(merged.status ?? "draft"),
+      dueDate: String(merged.dueDate),
+      total,
+      amountPaid,
+    });
+
+    const invoice = await storage.updateInvoice(id, {
+      ...(parsed.data as Partial<InsertInvoice>),
+      subtotal,
+      taxAmount,
+      total,
+      status,
+    });
+    res.json(invoice);
+  });
+
+  app.delete("/api/invoices/:id", async (req, res) => {
+    const ok = await storage.deleteInvoice(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Invoice not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Invoice items — full CRUD (Phase 3). Mutations recompute the parent
+  // invoice's totals server-side.
+  // =========================================================================
+  async function recomputeInvoiceTotals(invoiceId: number) {
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice) return;
+    const items = await storage.getInvoiceItems(invoiceId);
+    const { subtotal, taxAmount, total } = computeInvoiceTotals({
+      items,
+      discountAmount: invoice.discountAmount,
+      taxRate: invoice.taxRate,
+      travelFee: invoice.travelFee,
+      rushFee: invoice.rushFee,
+    });
+    const status = deriveInvoiceStatus({
+      currentStatus: invoice.status,
+      dueDate: invoice.dueDate,
+      total,
+      amountPaid: invoice.amountPaid,
+    });
+    await storage.updateInvoice(invoiceId, { subtotal, taxAmount, total, status });
+  }
+
+  app.get("/api/invoices/:invoiceId/items", async (req, res) => {
+    const data = await storage.getInvoiceItems(Number(req.params.invoiceId));
+    res.json(data);
+  });
+
+  app.post("/api/invoice-items", async (req, res) => {
+    const body = { ...req.body, amount: round2(Number(req.body.quantity ?? 1) * Number(req.body.unitPrice ?? 0)) };
+    const parsed = insertInvoiceItemSchema.safeParse(body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid invoice item data", errors: parsed.error.issues });
+    }
+    const item = await storage.createInvoiceItem(parsed.data as InsertInvoiceItem);
+    await recomputeInvoiceTotals(item.invoiceId);
+    res.status(201).json(item);
+  });
+
+  app.patch("/api/invoice-items/:id", async (req, res) => {
+    const parsed = insertInvoiceItemSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid invoice item data", errors: parsed.error.issues });
+    }
+    const patch: Partial<InvoiceItem> = { ...(parsed.data as Partial<InsertInvoiceItem>) };
+    const item = await storage.updateInvoiceItem(Number(req.params.id), patch);
+    if (!item) return res.status(404).json({ message: "Invoice item not found" });
+    if (patch.quantity !== undefined || patch.unitPrice !== undefined) {
+      const recalced = await storage.updateInvoiceItem(item.id, {
+        amount: round2(item.quantity * item.unitPrice),
+      });
+      await recomputeInvoiceTotals(item.invoiceId);
+      return res.json(recalced);
+    }
+    await recomputeInvoiceTotals(item.invoiceId);
+    res.json(item);
+  });
+
+  app.delete("/api/invoice-items/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    // Need invoiceId before delete to recompute afterwards.
+    const allInvoices = await storage.getInvoices();
+    let invoiceId: number | undefined;
+    for (const inv of allInvoices) {
+      const its = await storage.getInvoiceItems(inv.id);
+      if (its.some((it) => it.id === id)) { invoiceId = inv.id; break; }
+    }
+    const ok = await storage.deleteInvoiceItem(id);
+    if (!ok) return res.status(404).json({ message: "Invoice item not found" });
+    if (invoiceId) await recomputeInvoiceTotals(invoiceId);
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Payments — full CRUD (Phase 3). Recording a payment updates the parent
+  // invoice's amountPaid + derived status.
+  // =========================================================================
+  app.get("/api/invoices/:invoiceId/payments", async (req, res) => {
+    const data = await storage.getPaymentsByInvoice(Number(req.params.invoiceId));
+    res.json(data);
+  });
+
+  app.post("/api/payments", async (req, res) => {
+    const parsed = insertPaymentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid payment data", errors: parsed.error.issues });
+    }
+    const payment = await storage.createPayment(parsed.data as InsertPayment);
+    const invoice = await storage.getInvoice(payment.invoiceId);
+    if (invoice) {
+      const newAmountPaid = round2(invoice.amountPaid + payment.amount);
+      const status = deriveInvoiceStatus({
+        currentStatus: invoice.status === "draft" ? "sent" : invoice.status,
+        dueDate: invoice.dueDate,
+        total: invoice.total,
+        amountPaid: newAmountPaid,
+      });
+      await storage.updateInvoice(invoice.id, { amountPaid: newAmountPaid, status });
+    }
+    res.status(201).json(payment);
+  });
+
+  app.delete("/api/payments/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    const allInvoices = await storage.getInvoices();
+    let target: { invoiceId: number; amount: number } | undefined;
+    for (const inv of allInvoices) {
+      const pays = await storage.getPaymentsByInvoice(inv.id);
+      const p = pays.find((p) => p.id === id);
+      if (p) { target = { invoiceId: inv.id, amount: p.amount }; break; }
+    }
+    const ok = await storage.deletePayment(id);
+    if (!ok) return res.status(404).json({ message: "Payment not found" });
+    if (target) {
+      const invoice = await storage.getInvoice(target.invoiceId);
+      if (invoice) {
+        const newAmountPaid = round2(Math.max(0, invoice.amountPaid - target.amount));
+        const status = deriveInvoiceStatus({
+          currentStatus: newAmountPaid === 0 ? "sent" : invoice.status,
+          dueDate: invoice.dueDate,
+          total: invoice.total,
+          amountPaid: newAmountPaid,
+        });
+        await storage.updateInvoice(invoice.id, { amountPaid: newAmountPaid, status });
+      }
+    }
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Attachments — full CRUD (Phase 3). Placeholder file records only.
+  // =========================================================================
+  app.get("/api/attachments", async (req, res) => {
+    const entityType = String(req.query.entityType ?? "");
+    const entityId = Number(req.query.entityId ?? 0);
+    if (!entityType || !entityId) return res.status(400).json({ message: "entityType and entityId are required" });
+    const data = await storage.getAttachments(entityType, entityId);
+    res.json(data);
+  });
+
+  app.post("/api/attachments", async (req, res) => {
+    const parsed = insertAttachmentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid attachment data", errors: parsed.error.issues });
+    }
+    const attachment = await storage.createAttachment(parsed.data as InsertAttachment);
+    res.status(201).json(attachment);
+  });
+
+  app.delete("/api/attachments/:id", async (req, res) => {
+    const ok = await storage.deleteAttachment(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Attachment not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Printable invoice — server-rendered HTML, opened in a new tab and printed
+  // via window.print() (browser "Save as PDF"), adapted from the reference
+  // work-order-print.tsx + pdf-template.ts pattern.
+  // =========================================================================
+  app.get("/api/invoices/:id/print", async (req, res) => {
+    const invoice = await storage.getInvoice(Number(req.params.id));
+    if (!invoice) return res.status(404).send("Invoice not found");
+    const customer = await storage.getCustomer(invoice.customerId);
+    if (!customer) return res.status(404).send("Customer not found");
+    const items = await storage.getInvoiceItems(invoice.id);
+    const settings = await storage.getSettings();
+
+    const html = renderInvoicePrintHtml({
+      invoice,
+      customer,
+      items,
+      business: {
+        businessName: settings.businessName,
+        businessAddress: settings.businessAddress,
+        businessPhone: settings.businessPhone,
+        businessEmail: settings.businessEmail,
+        invoiceFooterNote: settings.invoiceFooterNote,
+      },
+    });
+    res.setHeader("Content-Type", "text/html");
+    res.send(html);
+  });
+
+  // =========================================================================
+  // App settings — singleton (Phase 3). Business info + invoice defaults.
+  // =========================================================================
+  app.get("/api/settings", async (_req, res) => {
+    const settings = await storage.getSettings();
+    res.json(settings);
+  });
+
+  app.patch("/api/settings", async (req, res) => {
+    const parsed = insertAppSettingsSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid settings data", errors: parsed.error.issues });
+    }
+    const settings = await storage.updateSettings(parsed.data as Partial<InsertAppSettings>);
+    res.json(settings);
   });
 
   return httpServer;

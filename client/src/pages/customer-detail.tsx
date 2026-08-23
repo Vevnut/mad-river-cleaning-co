@@ -5,13 +5,17 @@ import {
   ArrowLeft, Building2, Mail, Phone, MapPin, Plus, Home, ClipboardList,
   Receipt, UserSquare2, Pencil, ShieldCheck,
 } from "lucide-react";
-import type { Customer, Property, Contact } from "@shared/schema";
+import type { Customer, Property, Contact, Job, Invoice } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { StatusBadge } from "@/components/status-badge";
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog";
 import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
 import { NotesPanel } from "@/components/notes-panel";
@@ -21,7 +25,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { formatMoney } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 
 export default function CustomerDetailPage() {
   const params = useParams<{ id: string }>();
@@ -56,6 +60,24 @@ export default function CustomerDetailPage() {
     },
   });
 
+  const { data: jobHistory = [], isLoading: loadingJobs } = useQuery<Job[]>({
+    queryKey: ["/api/jobs", { customerId }],
+    queryFn: async () => {
+      const all: Job[] = await (await apiRequest("GET", "/api/jobs")).json();
+      return all.filter((j) => j.customerId === customerId).sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate));
+    },
+  });
+
+  const { data: invoiceHistory = [], isLoading: loadingInvoices } = useQuery<Invoice[]>({
+    queryKey: ["/api/invoices", { customerId }],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/invoices?customerId=${customerId}`);
+      return res.json();
+    },
+  });
+
+  const propertyById = (id: number) => properties.find((p) => p.id === id);
+
   if (isLoading) {
     return (
       <div className="space-y-4 p-4 md:p-6">
@@ -78,34 +100,38 @@ export default function CustomerDetailPage() {
 
   return (
     <div className="space-y-4 p-4 md:p-6">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Link href="/customers">
           <Button size="icon" variant="ghost" data-testid="button-back-customers">
             <ArrowLeft className="h-4 w-4" />
           </Button>
         </Link>
-        <h1 className="text-xl font-semibold flex-1 truncate" data-testid="text-customer-name">
+        <h1 className="text-xl font-semibold min-w-0 basis-full sm:basis-auto sm:flex-1 truncate" data-testid="text-customer-name">
           {customer.name}
         </h1>
-        <Badge variant="secondary" className="capitalize">{customer.customerType}</Badge>
-        {customer.taxExempt && (
-          <Badge variant="outline" className="gap-1">
-            <ShieldCheck className="h-3 w-3" /> Tax Exempt
-          </Badge>
-        )}
-        <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)} data-testid="button-edit-customer">
-          <Pencil className="h-3.5 w-3.5" /> Edit
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="secondary" className="capitalize">{customer.customerType}</Badge>
+          {customer.taxExempt && (
+            <Badge variant="outline" className="gap-1">
+              <ShieldCheck className="h-3 w-3" /> Tax Exempt
+            </Badge>
+          )}
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setEditOpen(true)} data-testid="button-edit-customer">
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </Button>
+        </div>
       </div>
 
       <Tabs defaultValue="overview">
-        <TabsList>
-          <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
-          <TabsTrigger value="properties" data-testid="tab-properties">Properties</TabsTrigger>
-          <TabsTrigger value="jobs" data-testid="tab-jobs">Job History</TabsTrigger>
-          <TabsTrigger value="invoices" data-testid="tab-invoices">Invoice History</TabsTrigger>
-          <TabsTrigger value="contacts" data-testid="tab-contacts">Contacts</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="w-max min-w-full">
+            <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+            <TabsTrigger value="properties" data-testid="tab-properties">Properties</TabsTrigger>
+            <TabsTrigger value="jobs" data-testid="tab-jobs">Job History</TabsTrigger>
+            <TabsTrigger value="invoices" data-testid="tab-invoices">Invoice History</TabsTrigger>
+            <TabsTrigger value="contacts" data-testid="tab-contacts">Contacts</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -217,21 +243,83 @@ export default function CustomerDetailPage() {
         </TabsContent>
 
         <TabsContent value="jobs">
-          <div className="flex flex-col items-center gap-2 rounded-md border py-12 text-center" data-testid="empty-job-history">
-            <ClipboardList className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No job history yet. Jobs will appear here once Scheduling/Jobs launches in Phase 2.
-            </p>
-          </div>
+          {loadingJobs ? (
+            <Skeleton className="h-40 w-full" />
+          ) : jobHistory.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 rounded-md border py-12 text-center" data-testid="empty-job-history">
+              <ClipboardList className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                No job history yet for this customer.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <Table className="min-w-[560px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Date</TableHead>
+                    <TableHead className="min-w-[140px]">Property</TableHead>
+                    <TableHead className="hidden sm:table-cell whitespace-nowrap">Type</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Price</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobHistory.map((j) => (
+                    <TableRow key={j.id} data-testid={`row-customer-job-${j.id}`}>
+                      <TableCell className="whitespace-nowrap">
+                        <Link href={`/jobs/${j.id}`} className="hover:underline tabular-nums">{formatDate(j.scheduledDate)}</Link>
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap">{propertyById(j.propertyId)?.name ?? `Property #${j.propertyId}`}</TableCell>
+                      <TableCell className="hidden sm:table-cell capitalize whitespace-nowrap">{j.jobType.replace("_", " ")}</TableCell>
+                      <TableCell className="whitespace-nowrap"><StatusBadge status={j.status} /></TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">{formatMoney(j.price)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="invoices">
-          <div className="flex flex-col items-center gap-2 rounded-md border py-12 text-center" data-testid="empty-invoice-history">
-            <Receipt className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">
-              No invoices yet. Invoicing launches in Phase 3.
-            </p>
-          </div>
+          {loadingInvoices ? (
+            <Skeleton className="h-40 w-full" />
+          ) : invoiceHistory.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 rounded-md border py-12 text-center" data-testid="empty-invoice-history">
+              <Receipt className="h-8 w-8 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">
+                No invoices yet for this customer.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-md border">
+              <Table className="min-w-[560px]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="whitespace-nowrap">Invoice #</TableHead>
+                    <TableHead className="whitespace-nowrap">Issue Date</TableHead>
+                    <TableHead className="whitespace-nowrap">Due Date</TableHead>
+                    <TableHead className="text-right whitespace-nowrap">Total</TableHead>
+                    <TableHead className="whitespace-nowrap">Status</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {invoiceHistory.map((inv) => (
+                    <TableRow key={inv.id} data-testid={`row-customer-invoice-${inv.id}`}>
+                      <TableCell className="whitespace-nowrap">
+                        <Link href={`/invoices/${inv.id}`} className="hover:underline font-medium">{inv.invoiceNumber}</Link>
+                      </TableCell>
+                      <TableCell className="tabular-nums whitespace-nowrap">{formatDate(inv.issueDate)}</TableCell>
+                      <TableCell className="tabular-nums whitespace-nowrap">{formatDate(inv.dueDate)}</TableCell>
+                      <TableCell className="text-right tabular-nums whitespace-nowrap">{formatMoney(inv.total)}</TableCell>
+                      <TableCell className="whitespace-nowrap"><StatusBadge status={inv.status} /></TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="contacts" className="space-y-4">

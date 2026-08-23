@@ -290,3 +290,28 @@ export const insertAttachmentSchema = createInsertSchema(attachments).omit({
 });
 export type InsertAttachment = typeof attachments.$inferInsert;
 export type Attachment = typeof attachments.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// 14. app_settings — singleton row (id always 1), Phase 3.
+// Business info + invoice defaults consumed by invoice creation & print view.
+// ---------------------------------------------------------------------------
+export const appSettings = sqliteTable("app_settings", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  businessName: text("business_name").notNull().default("Ridgeline Cleaning Ops"),
+  businessAddress: text("business_address").notNull().default(""),
+  businessPhone: text("business_phone").notNull().default(""),
+  businessEmail: text("business_email").notNull().default(""),
+  logoPlaceholder: text("logo_placeholder"),
+  defaultTaxRate: real("default_tax_rate").notNull().default(0),
+  defaultPaymentTermsDays: integer("default_payment_terms_days").notNull().default(15),
+  invoiceNumberPrefix: text("invoice_number_prefix").notNull().default("INV"),
+  invoiceFooterNote: text("invoice_footer_note").notNull().default("Thank you for your business."),
+  notifyJobReminders: integer("notify_job_reminders", { mode: "boolean" }).notNull().default(true),
+  notifyInvoiceOverdue: integer("notify_invoice_overdue", { mode: "boolean" }).notNull().default(true),
+  notifyPaymentReceived: integer("notify_payment_received", { mode: "boolean" }).notNull().default(true),
+  notifyDailyDigest: integer("notify_daily_digest", { mode: "boolean" }).notNull().default(false),
+});
+
+export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({ id: true });
+export type InsertAppSettings = typeof appSettings.$inferInsert;
+export type AppSettings = typeof appSettings.$inferSelect;

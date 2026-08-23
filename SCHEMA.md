@@ -216,6 +216,31 @@ SQLite-specific notes:
 | category | text, enum(photo, document) | |
 | uploadedAt | text (ISO datetime), default now | |
 
+## 14. app_settings
+
+Singleton table — always exactly one row (`id = 1`), created lazily on first
+read. Holds business info and invoice defaults consumed by invoice creation
+(invoice number prefix, default tax rate, default payment terms) and the
+printable invoice view (business name/address/phone/email, footer note), plus
+static notification toggles surfaced on the Settings page.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | integer, PK | always 1 |
+| businessName | text, not null, default "Ridgeline Cleaning Ops" | |
+| businessAddress | text, not null, default "" | |
+| businessPhone | text, not null, default "" | |
+| businessEmail | text, not null, default "" | |
+| logoPlaceholder | text, nullable | |
+| defaultTaxRate | real, not null, default 0 | fraction, e.g. 0.08 |
+| defaultPaymentTermsDays | integer, not null, default 15 | added to issueDate for dueDate |
+| invoiceNumberPrefix | text, not null, default "INV" | e.g. "INV-0001-42" |
+| invoiceFooterNote | text, not null, default "Thank you for your business." | |
+| notifyJobReminders | boolean, default true | static toggle, non-functional |
+| notifyInvoiceOverdue | boolean, default true | static toggle, non-functional |
+| notifyPaymentReceived | boolean, default true | static toggle, non-functional |
+| notifyDailyDigest | boolean, default false | static toggle, non-functional |
+
 ## Relations
 
 - customer 1—many: properties, contacts, notes, invoices
@@ -223,6 +248,7 @@ SQLite-specific notes:
 - job 1—1: invoice (nullable); 1—many: service_checklists, notes, attachments
 - invoice 1—many: invoice_items, payments
 - staff 1—many: jobs (assigned), schedules
+- app_settings: singleton, no relations — read by invoice creation and the invoice print view
 
 ## Known library quirk: `InsertX` types vs. `insertXSchema`
 
@@ -248,11 +274,27 @@ Workaround used throughout this codebase:
 The `insertXSchema` zod objects themselves are unchanged and remain the
 source of truth for runtime request validation.
 
-## Phase 1 implementation status
+## Implementation status (Phase 3 — complete)
 
-Full CRUD (routes + storage): **customers, contacts, properties, notes**.
+Full CRUD (routes + storage + dedicated UI) for all 14 tables: **customers,
+contacts, properties, notes, staff, job_templates, service_checklists,
+schedules, jobs, invoices, invoice_items, payments, attachments,
+app_settings**.
 
-Read-only or seed-only in Phase 1 (CRUD lands in Phase 2/3, storage methods
-already scaffolded in `server/storage.ts` / `IStorage`): staff, job_templates,
-service_checklists, schedules, jobs, invoices, invoice_items, payments,
-attachments.
+Key derived behaviors layered on top of plain CRUD:
+- Generating an invoice from a completed job (`POST /api/jobs/:id/invoice`)
+  reads `app_settings` for the invoice number prefix, default tax rate, and
+  payment terms, then creates the `invoices` row plus a starter
+  `invoice_items` row from the job's price, and flips the job's `status` to
+  `invoiced`.
+- Recording a payment (`POST /api/invoices/:id/payments`) inserts a
+  `payments` row and recomputes the parent invoice's `amountPaid` and
+  `status` (`paid` when `amountPaid >= total`, `partial` when `0 <
+  amountPaid < total`, `overdue` when unpaid/partial past `dueDate`).
+- The printable invoice view (`GET /api/invoices/:id/print`) merges the
+  invoice, its line items, and `app_settings` business info into one
+  print-ready payload — see `server/invoice-print-template.ts`.
+- All FK relations listed above are enforced at the storage layer
+  (`server/storage.ts`); see the SQLite-vs-Postgres note at the top of this
+  file for why real DB-level `REFERENCES` constraints only exist in
+  `postgres_migration.sql`.

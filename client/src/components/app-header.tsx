@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { Search, Sun, Moon, Plus, ChevronDown } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
   const { theme, toggleTheme } = useTheme();
   const [role, setRole] = useState("Admin");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [, navigate] = useLocation();
 
   // Cmd/Ctrl+K opens the global search command palette.
   useEffect(() => {
@@ -71,11 +73,11 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
             <DropdownMenuItem data-testid="menuitem-new-property" onClick={onNewProperty}>
               New Property
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menuitem-new-job" disabled>
-              New Job (coming soon)
+            <DropdownMenuItem data-testid="menuitem-new-job" onClick={() => navigate("/scheduling")}>
+              New Job
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menuitem-new-invoice" disabled>
-              New Invoice (coming soon)
+            <DropdownMenuItem data-testid="menuitem-new-invoice" onClick={() => navigate("/invoices/new")}>
+              New Invoice
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

@@ -11,13 +11,16 @@
 import { db } from "../server/storage";
 import {
   customers, contacts, properties, staff, jobTemplates,
-  schedules, jobs, serviceChecklists,
+  schedules, jobs, serviceChecklists, invoices, invoiceItems, payments, appSettings,
 } from "../shared/schema";
 
 function run() {
   console.log("Seeding Ridgeline database...");
 
   // Clear existing rows for idempotent re-seeding (children first, FK order)
+  db.delete(payments).run();
+  db.delete(invoiceItems).run();
+  db.delete(invoices).run();
   db.delete(serviceChecklists).run();
   db.delete(jobs).run();
   db.delete(schedules).run();
@@ -26,6 +29,7 @@ function run() {
   db.delete(customers).run();
   db.delete(staff).run();
   db.delete(jobTemplates).run();
+  db.delete(appSettings).run();
 
   // ---------------------------------------------------------------------
   // Customers
@@ -764,6 +768,186 @@ function run() {
     db.insert(serviceChecklists).values(checklistRows).run();
   }
   console.log(`Inserted ${checklistRows.length} checklist items across ${checklistTargets.length} jobs.`);
+
+  // =======================================================================
+  // Phase 3 — App settings (singleton) + Invoices/items/payments
+  // Spec: 2 fully paid, 2 overdue (past due date, unpaid), 1 partial
+  // payment, 1 draft/unsent — tied to completed jobs, realistic line items
+  // (turnover base fee, supplies fee, occasional rush/travel fee, tax).
+  // =======================================================================
+  const settingsRow = db.insert(appSettings).values({
+    id: 1,
+    businessName: "Ridgeline Cleaning Ops",
+    businessAddress: "118 White Mountain Hwy, Conway, NH 03818",
+    businessPhone: "603-555-0100",
+    businessEmail: "office@ridgelinecleaningops.com",
+    defaultTaxRate: 0.08,
+    defaultPaymentTermsDays: 15,
+    invoiceNumberPrefix: "INV",
+    invoiceFooterNote: "Thank you for choosing Ridgeline Cleaning Ops. Payment due within terms noted above.",
+    notifyJobReminders: true,
+    notifyInvoiceOverdue: true,
+    notifyPaymentReceived: true,
+    notifyDailyDigest: false,
+  }).returning().get();
+  console.log(`Inserted app settings (id ${settingsRow.id}).`);
+
+  function round2(n: number): number {
+    return Math.round((n + Number.EPSILON) * 100) / 100;
+  }
+
+  function makeInvoice(opts: {
+    job: (typeof insertedJobs)[number];
+    num: number;
+    issueOffsetDays: number;
+    dueOffsetDays: number;
+    status: "draft" | "sent" | "paid" | "partial" | "overdue";
+    supplyFee?: number;
+    rushFee?: number;
+    travelFee?: number;
+    discountAmount?: number;
+    paidAmountOverride?: number;
+    notes?: string | null;
+  }) {
+    const property = insertedProperties.find((p) => p.id === opts.job.propertyId)!;
+    const taxRate = settingsRow.defaultTaxRate;
+    const supplyFee = opts.supplyFee ?? 0;
+    const rushFee = opts.rushFee ?? 0;
+    const travelFee = opts.travelFee ?? 0;
+    const discountAmount = opts.discountAmount ?? 0;
+
+    const lineItems: Array<{ description: string; itemType: "service" | "supplies" | "fee"; quantity: number; unitPrice: number; amount: number }> = [
+      {
+        description: `${opts.job.jobType.replace("_", " ")} clean — ${property.name}`,
+        itemType: "service",
+        quantity: 1,
+        unitPrice: opts.job.price,
+        amount: round2(opts.job.price),
+      },
+    ];
+    if (supplyFee > 0) {
+      lineItems.push({
+        description: "Restocked cleaning & guest supplies",
+        itemType: "supplies",
+        quantity: 1,
+        unitPrice: supplyFee,
+        amount: round2(supplyFee),
+      });
+    }
+
+    const subtotal = round2(lineItems.reduce((s, i) => s + i.amount, 0));
+    const taxable = Math.max(0, subtotal - discountAmount);
+    const taxAmount = round2(taxable * taxRate);
+    const total = round2(taxable + taxAmount + travelFee + rushFee);
+
+    let amountPaid = 0;
+    if (opts.status === "paid") amountPaid = total;
+    if (opts.status === "partial") amountPaid = opts.paidAmountOverride ?? round2(total / 2);
+
+    const invoiceNumber = `${settingsRow.invoiceNumberPrefix}-${String(opts.num).padStart(4, "0")}-${opts.job.id}`;
+    const invoice = db.insert(invoices).values({
+      customerId: opts.job.customerId,
+      jobId: opts.job.id,
+      invoiceNumber,
+      issueDate: isoDaysFromToday(opts.issueOffsetDays),
+      dueDate: isoDaysFromToday(opts.dueOffsetDays),
+      status: opts.status,
+      subtotal,
+      discountAmount,
+      taxRate,
+      taxAmount,
+      travelFee,
+      rushFee,
+      total,
+      amountPaid,
+      notes: opts.notes ?? null,
+    }).returning().get();
+
+    lineItems.forEach((item, idx) => {
+      db.insert(invoiceItems).values({ ...item, invoiceId: invoice.id, sortOrder: idx }).run();
+    });
+    if (travelFee > 0) {
+      db.insert(invoiceItems).values({
+        description: "Travel fee (out-of-zone property)",
+        itemType: "fee",
+        quantity: 1,
+        unitPrice: travelFee,
+        amount: travelFee,
+        invoiceId: invoice.id,
+        sortOrder: lineItems.length,
+      }).run();
+    }
+    if (rushFee > 0) {
+      db.insert(invoiceItems).values({
+        description: "Rush turnaround fee (same-day booking)",
+        itemType: "fee",
+        quantity: 1,
+        unitPrice: rushFee,
+        amount: rushFee,
+        invoiceId: invoice.id,
+        sortOrder: lineItems.length + 1,
+      }).run();
+    }
+
+    if (opts.status === "paid") {
+      db.insert(payments).values({
+        invoiceId: invoice.id,
+        amount: amountPaid,
+        method: "card",
+        paidDate: isoDaysFromToday(opts.dueOffsetDays - 2),
+        reference: `CHG-${1000 + opts.num}`,
+      }).run();
+    } else if (opts.status === "partial") {
+      db.insert(payments).values({
+        invoiceId: invoice.id,
+        amount: amountPaid,
+        method: "ach",
+        paidDate: isoDaysFromToday(opts.issueOffsetDays + 3),
+        reference: `ACH-${2000 + opts.num}`,
+      }).run();
+    }
+
+    return invoice;
+  }
+
+  const invoicedOrCompleted = insertedJobs.filter(
+    (j) => j.status === "invoiced" || j.status === "completed"
+  );
+  const invoiceTargets = invoicedOrCompleted.slice(0, 6);
+
+  const seededInvoices = [
+    // 2 fully paid
+    makeInvoice({
+      job: invoiceTargets[0], num: 1, issueOffsetDays: -12, dueOffsetDays: 3,
+      status: "paid", supplyFee: 18,
+    }),
+    makeInvoice({
+      job: invoiceTargets[1], num: 2, issueOffsetDays: -10, dueOffsetDays: 5,
+      status: "paid", supplyFee: 22, rushFee: 25,
+    }),
+    // 2 overdue (past due date, unpaid)
+    makeInvoice({
+      job: invoiceTargets[2], num: 3, issueOffsetDays: -25, dueOffsetDays: -10,
+      status: "overdue", supplyFee: 15,
+      notes: "Second notice sent — please remit payment at your earliest convenience.",
+    }),
+    makeInvoice({
+      job: invoiceTargets[3], num: 4, issueOffsetDays: -20, dueOffsetDays: -5,
+      status: "overdue", supplyFee: 20, travelFee: 15,
+    }),
+    // 1 partial payment
+    makeInvoice({
+      job: invoiceTargets[4], num: 5, issueOffsetDays: -8, dueOffsetDays: 7,
+      status: "partial", supplyFee: 18,
+    }),
+    // 1 draft/unsent
+    makeInvoice({
+      job: invoiceTargets[5], num: 6, issueOffsetDays: 0, dueOffsetDays: 15,
+      status: "draft", supplyFee: 20,
+      notes: "Draft — review line items before sending to customer.",
+    }),
+  ];
+  console.log(`Inserted ${seededInvoices.length} invoices (2 paid, 2 overdue, 1 partial, 1 draft).`);
 
   console.log("Seed complete.");
 }
