@@ -7,8 +7,16 @@ import {
   insertContactSchema,
   insertPropertySchema,
   insertNoteSchema,
+  insertStaffSchema,
+  insertJobTemplateSchema,
+  insertServiceChecklistSchema,
+  insertScheduleSchema,
+  insertJobSchema,
 } from "@shared/schema";
-import type { InsertCustomer, InsertContact, InsertProperty, InsertNote } from "@shared/schema";
+import type {
+  InsertCustomer, InsertContact, InsertProperty, InsertNote,
+  InsertStaff, InsertJobTemplate, InsertServiceChecklist, InsertSchedule, InsertJob,
+} from "@shared/schema";
 
 // NOTE: drizzle-zod@0.7.1 + zod@4.4.3 infer enum-typed insert schema fields as
 // a broken union (see SCHEMA.md). Runtime validation via `safeParse` below is
@@ -172,32 +180,210 @@ export async function registerRoutes(
   });
 
   // =========================================================================
-  // Staff — read-only list (used by Dashboard/Properties assignment displays).
-  // Full CRUD + Settings UI lands in Phase 3.
+  // Staff — full CRUD (Phase 2). Settings UI for role management lands in Phase 3.
   // =========================================================================
   app.get("/api/staff", async (_req, res) => {
     const data = await storage.getStaffList();
     res.json(data);
   });
 
+  app.get("/api/staff/:id", async (req, res) => {
+    const member = await storage.getStaffMember(Number(req.params.id));
+    if (!member) return res.status(404).json({ message: "Staff member not found" });
+    res.json(member);
+  });
+
+  app.post("/api/staff", async (req, res) => {
+    const parsed = insertStaffSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid staff data", errors: parsed.error.issues });
+    }
+    const member = await storage.createStaff(parsed.data as InsertStaff);
+    res.status(201).json(member);
+  });
+
+  app.patch("/api/staff/:id", async (req, res) => {
+    const parsed = insertStaffSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid staff data", errors: parsed.error.issues });
+    }
+    const member = await storage.updateStaff(Number(req.params.id), parsed.data as Partial<InsertStaff>);
+    if (!member) return res.status(404).json({ message: "Staff member not found" });
+    res.json(member);
+  });
+
+  app.delete("/api/staff/:id", async (req, res) => {
+    const ok = await storage.deleteStaff(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Staff member not found" });
+    res.status(204).send();
+  });
+
   // =========================================================================
-  // Job templates — read-only list (used by future Jobs/Scheduling pages).
-  // Full CRUD + Settings UI lands in Phase 3.
+  // Job templates — full CRUD (Phase 2). Settings UI for editing templates
+  // lands in Phase 3, but the API is ready now for Jobs/Scheduling pages.
   // =========================================================================
   app.get("/api/job-templates", async (_req, res) => {
     const data = await storage.getJobTemplates();
     res.json(data);
   });
 
+  app.get("/api/job-templates/:id", async (req, res) => {
+    const template = await storage.getJobTemplate(Number(req.params.id));
+    if (!template) return res.status(404).json({ message: "Job template not found" });
+    res.json(template);
+  });
+
+  app.post("/api/job-templates", async (req, res) => {
+    const parsed = insertJobTemplateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid job template data", errors: parsed.error.issues });
+    }
+    const template = await storage.createJobTemplate(parsed.data as InsertJobTemplate);
+    res.status(201).json(template);
+  });
+
+  app.patch("/api/job-templates/:id", async (req, res) => {
+    const parsed = insertJobTemplateSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid job template data", errors: parsed.error.issues });
+    }
+    const template = await storage.updateJobTemplate(Number(req.params.id), parsed.data as Partial<InsertJobTemplate>);
+    if (!template) return res.status(404).json({ message: "Job template not found" });
+    res.json(template);
+  });
+
+  app.delete("/api/job-templates/:id", async (req, res) => {
+    const ok = await storage.deleteJobTemplate(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Job template not found" });
+    res.status(204).send();
+  });
+
   // =========================================================================
-  // Jobs / Invoices — minimal read endpoints so Dashboard KPIs & future pages
-  // have a real (currently empty) data source. Full CRUD lands in Phase 2/3.
+  // Schedules — full CRUD (Phase 2). Recurring rules that generate job instances.
   // =========================================================================
-  app.get("/api/jobs", async (_req, res) => {
-    const data = await storage.getJobs();
+  app.get("/api/schedules", async (req, res) => {
+    const propertyId = req.query.propertyId ? Number(req.query.propertyId) : undefined;
+    const data = propertyId
+      ? await storage.getSchedulesByProperty(propertyId)
+      : await storage.getSchedules();
     res.json(data);
   });
 
+  app.get("/api/schedules/:id", async (req, res) => {
+    const schedule = await storage.getSchedule(Number(req.params.id));
+    if (!schedule) return res.status(404).json({ message: "Schedule not found" });
+    res.json(schedule);
+  });
+
+  app.post("/api/schedules", async (req, res) => {
+    const parsed = insertScheduleSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid schedule data", errors: parsed.error.issues });
+    }
+    const schedule = await storage.createSchedule(parsed.data as InsertSchedule);
+    res.status(201).json(schedule);
+  });
+
+  app.patch("/api/schedules/:id", async (req, res) => {
+    const parsed = insertScheduleSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid schedule data", errors: parsed.error.issues });
+    }
+    const schedule = await storage.updateSchedule(Number(req.params.id), parsed.data as Partial<InsertSchedule>);
+    if (!schedule) return res.status(404).json({ message: "Schedule not found" });
+    res.json(schedule);
+  });
+
+  app.delete("/api/schedules/:id", async (req, res) => {
+    const ok = await storage.deleteSchedule(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Schedule not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Jobs — full CRUD (Phase 2). List endpoint supports filtering by status,
+  // date range, property, and job type via query params.
+  // =========================================================================
+  app.get("/api/jobs", async (req, res) => {
+    const { status, dateFrom, dateTo, propertyId, jobType } = req.query;
+    const data = await storage.getJobs({
+      status: typeof status === "string" ? status : undefined,
+      dateFrom: typeof dateFrom === "string" ? dateFrom : undefined,
+      dateTo: typeof dateTo === "string" ? dateTo : undefined,
+      propertyId: propertyId ? Number(propertyId) : undefined,
+      jobType: typeof jobType === "string" ? jobType : undefined,
+    });
+    res.json(data);
+  });
+
+  app.get("/api/jobs/:id", async (req, res) => {
+    const job = await storage.getJob(Number(req.params.id));
+    if (!job) return res.status(404).json({ message: "Job not found" });
+    res.json(job);
+  });
+
+  app.post("/api/jobs", async (req, res) => {
+    const parsed = insertJobSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid job data", errors: parsed.error.issues });
+    }
+    const job = await storage.createJob(parsed.data as InsertJob);
+    res.status(201).json(job);
+  });
+
+  app.patch("/api/jobs/:id", async (req, res) => {
+    const parsed = insertJobSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid job data", errors: parsed.error.issues });
+    }
+    const job = await storage.updateJob(Number(req.params.id), parsed.data as Partial<InsertJob>);
+    if (!job) return res.status(404).json({ message: "Job not found" });
+    res.json(job);
+  });
+
+  app.delete("/api/jobs/:id", async (req, res) => {
+    const ok = await storage.deleteJob(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Job not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Service checklists — full CRUD (Phase 2). Scoped to a single job.
+  // =========================================================================
+  app.get("/api/jobs/:jobId/checklist", async (req, res) => {
+    const data = await storage.getChecklistItemsByJob(Number(req.params.jobId));
+    res.json(data);
+  });
+
+  app.post("/api/checklist-items", async (req, res) => {
+    const parsed = insertServiceChecklistSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid checklist item data", errors: parsed.error.issues });
+    }
+    const item = await storage.createChecklistItem(parsed.data as InsertServiceChecklist);
+    res.status(201).json(item);
+  });
+
+  app.patch("/api/checklist-items/:id", async (req, res) => {
+    const parsed = insertServiceChecklistSchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid checklist item data", errors: parsed.error.issues });
+    }
+    const item = await storage.updateChecklistItem(Number(req.params.id), parsed.data as Partial<InsertServiceChecklist>);
+    if (!item) return res.status(404).json({ message: "Checklist item not found" });
+    res.json(item);
+  });
+
+  app.delete("/api/checklist-items/:id", async (req, res) => {
+    const ok = await storage.deleteChecklistItem(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Checklist item not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Invoices — minimal read endpoint so Dashboard KPIs have a data source.
+  // Full CRUD lands in Phase 3.
+  // =========================================================================
   app.get("/api/invoices", async (_req, res) => {
     const data = await storage.getInvoices();
     res.json(data);

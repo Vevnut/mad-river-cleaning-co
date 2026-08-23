@@ -1,18 +1,26 @@
 /**
- * Seed script — Phase 1
+ * Seed script — Phase 1 + Phase 2
  * Populates customers, contacts, properties, staff, and job_templates with
- * realistic White Mountains, NH sample data per the master spec.
- * Jobs/invoices sample rows are added in Phase 2/3 once those pages exist.
+ * realistic White Mountains, NH sample data per the master spec (Phase 1),
+ * plus schedules (recurring rules), jobs spanning the last/next 2 weeks in
+ * every status, and service_checklists for a few completed/in-progress jobs
+ * (Phase 2).
  *
  * Run with: npx tsx script/seed.ts
  */
 import { db } from "../server/storage";
-import { customers, contacts, properties, staff, jobTemplates } from "../shared/schema";
+import {
+  customers, contacts, properties, staff, jobTemplates,
+  schedules, jobs, serviceChecklists,
+} from "../shared/schema";
 
 function run() {
   console.log("Seeding Ridgeline database...");
 
-  // Clear existing rows for idempotent re-seeding (Phase 1 tables only)
+  // Clear existing rows for idempotent re-seeding (children first, FK order)
+  db.delete(serviceChecklists).run();
+  db.delete(jobs).run();
+  db.delete(schedules).run();
   db.delete(contacts).run();
   db.delete(properties).run();
   db.delete(customers).run();
@@ -206,7 +214,7 @@ function run() {
   // ---------------------------------------------------------------------
   // Properties (13–15 total)
   // ---------------------------------------------------------------------
-  db.insert(properties).values([
+  const insertedProperties = db.insert(properties).values([
     // Coastal Vista Rentals LLC — 4 properties (North Conway / Conway)
     {
       customerId: coastalVista.id, name: "Saco River Retreat",
@@ -382,27 +390,27 @@ function run() {
       supplyNotes: "Standard kit plus extra beach towels.",
       cleaningFrequency: "weekly", basePrice: 100, photoUrl: null, active: true,
     },
-  ]).run();
+  ]).returning().all();
 
-  console.log("Inserted 15 properties.");
+  console.log(`Inserted ${insertedProperties.length} properties.`);
 
   // ---------------------------------------------------------------------
   // Staff — 1 admin, 1 office, 3 cleaners
   // ---------------------------------------------------------------------
-  db.insert(staff).values([
+  const insertedStaff = db.insert(staff).values([
     { name: "Ellen Marsh", role: "admin", email: "ellen@ridgelinecleaning.com", phone: "603-555-1001", colorTag: "#0e7c86", active: true },
     { name: "Owen Petrucci", role: "office", email: "owen@ridgelinecleaning.com", phone: "603-555-1002", colorTag: "#7a39bb", active: true },
     { name: "Maya Lindqvist", role: "cleaner", email: "maya@ridgelinecleaning.com", phone: "603-555-1003", colorTag: "#2f9e44", active: true },
     { name: "Jorge Fuentes", role: "cleaner", email: "jorge@ridgelinecleaning.com", phone: "603-555-1004", colorTag: "#e8590c", active: true },
     { name: "Alicia Beaumont", role: "cleaner", email: "alicia@ridgelinecleaning.com", phone: "603-555-1005", colorTag: "#d6336c", active: true },
-  ]).run();
+  ]).returning().all();
 
-  console.log("Inserted 5 staff members.");
+  console.log(`Inserted ${insertedStaff.length} staff members.`);
 
   // ---------------------------------------------------------------------
   // Job templates
   // ---------------------------------------------------------------------
-  db.insert(jobTemplates).values([
+  const insertedTemplates = db.insert(jobTemplates).values([
     {
       name: "Standard Turnover",
       jobType: "turnover",
@@ -480,9 +488,282 @@ function run() {
       ]),
       description: "Flexible template for one-off requests outside standard job types.",
     },
-  ]).run();
+  ]).returning().all();
 
-  console.log("Inserted 5 job templates.");
+  console.log(`Inserted ${insertedTemplates.length} job templates.`);
+
+  // =======================================================================
+  // Phase 2 — Schedules (recurring rules) + Jobs (spread across last/next
+  // 2 weeks, every status) + Service checklists (from template defaults)
+  // =======================================================================
+  const byPropName = (name: string) => insertedProperties.find((p) => p.name === name)!;
+  const staffByName = (name: string) => insertedStaff.find((s) => s.name === name)!;
+  const templateByName = (name: string) => insertedTemplates.find((t) => t.name === name)!;
+
+  const cleaners = insertedStaff.filter((s) => s.role === "cleaner");
+  const turnoverTemplate = templateByName("Standard Turnover");
+  const deepCleanTemplate = templateByName("Deep Clean");
+  const inspectionTemplate = templateByName("Inspection Walkthrough");
+  const customTemplate = templateByName("Custom Job");
+
+  function isoDaysFromToday(offset: number): string {
+    const d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.toISOString().slice(0, 10);
+  }
+  function pickCleaner(i: number) {
+    return cleaners[i % cleaners.length];
+  }
+
+  // --- Schedules: one recurring rule per turnover/weekly/biweekly property ---
+  const turnoverProperties = insertedProperties.filter((p) => p.cleaningFrequency === "turnover");
+  const weeklyOrBiweeklyProperties = insertedProperties.filter(
+    (p) => p.cleaningFrequency === "weekly" || p.cleaningFrequency === "biweekly"
+  );
+  const scheduleRows = [
+    ...weeklyOrBiweeklyProperties.map((p, i) => ({
+      propertyId: p.id,
+      jobTemplateId: turnoverTemplate.id,
+      frequency: (p.cleaningFrequency === "weekly" ? "weekly" : "biweekly") as "weekly" | "biweekly",
+      dayOfWeek: p.cleaningFrequency === "weekly" ? 6 : 5, // Sat for weekly lakeside, Fri for Hendricks biweekly
+      startDate: isoDaysFromToday(-60),
+      endDate: null,
+      assignedStaffId: pickCleaner(i).id,
+      active: true,
+    })),
+    // A handful of representative turnover properties also get a standing
+    // recurring rule (most turnovers are booking-driven/ad hoc, but these
+    // are the property manager's highest-volume, near-weekly units).
+    ...turnoverProperties.slice(0, 3).map((p, i) => ({
+      propertyId: p.id,
+      jobTemplateId: turnoverTemplate.id,
+      frequency: "weekly" as const,
+      dayOfWeek: 0, // Sunday changeover
+      startDate: isoDaysFromToday(-60),
+      endDate: null,
+      assignedStaffId: pickCleaner(i + 1).id,
+      active: true,
+    })),
+  ];
+  const insertedSchedules = db.insert(schedules).values(scheduleRows).returning().all();
+  console.log(`Inserted ${insertedSchedules.length} schedules.`);
+
+  const hendricksSchedule = insertedSchedules.find(
+    (s) => s.propertyId === byPropName("Hendricks Residence").id
+  )!;
+
+  // --- Jobs: spread across last 2 weeks + next 2 weeks, every status ---
+  type JobRow = typeof jobs.$inferInsert;
+  const jobRows: JobRow[] = [];
+  let cleanerCursor = 0;
+  function nextCleanerId() {
+    const c = pickCleaner(cleanerCursor);
+    cleanerCursor++;
+    return c.id;
+  }
+
+  function addJob(row: Omit<JobRow, "assignedStaffId" | "beforePhotos" | "afterPhotos"> & { assignedStaffId?: number | null }) {
+    jobRows.push({
+      ...row,
+      assignedStaffId: row.assignedStaffId ?? nextCleanerId(),
+      beforePhotos: "[]",
+      afterPhotos: "[]",
+    });
+  }
+
+  // Helper: standard turnover job for a given property/offset/status
+  function turnoverJob(propName: string, dayOffset: number, status: JobRow["status"], opts?: Partial<JobRow>) {
+    const p = byPropName(propName);
+    addJob({
+      propertyId: p.id,
+      customerId: p.customerId,
+      scheduleId: null,
+      jobTemplateId: turnoverTemplate.id,
+      jobType: "turnover",
+      scheduledDate: isoDaysFromToday(dayOffset),
+      scheduledTime: dayOffset % 2 === 0 ? "11:00" : "14:00",
+      durationMinutes: turnoverTemplate.defaultDurationMinutes,
+      status,
+      internalNotes: null,
+      customerNotes: null,
+      price: p.basePrice,
+      completedAt: status === "completed" || status === "invoiced" ? isoDaysFromToday(dayOffset) + "T15:30:00" : null,
+      ...opts,
+    });
+  }
+
+  // Coastal Vista Rentals — 4 properties, turnover-heavy, mixed statuses across the window
+  turnoverJob("Saco River Retreat", -13, "completed");
+  turnoverJob("Saco River Retreat", -6, "completed");
+  turnoverJob("Saco River Retreat", 1, "scheduled");
+  turnoverJob("Saco River Retreat", 8, "scheduled");
+  turnoverJob("Cranmore View Condo 3B", -11, "invoiced");
+  turnoverJob("Cranmore View Condo 3B", -4, "completed");
+  turnoverJob("Cranmore View Condo 3B", 3, "scheduled");
+  turnoverJob("Echo Lake Cabin", -9, "canceled", { internalNotes: "Guest extended stay — cleaner notified, job canceled." });
+  turnoverJob("Echo Lake Cabin", -2, "completed");
+  turnoverJob("Echo Lake Cabin", 5, "scheduled");
+  turnoverJob("Kearsarge Ridge Loft", -7, "completed");
+  turnoverJob("Kearsarge Ridge Loft", 0, "in_progress");
+  turnoverJob("Kearsarge Ridge Loft", 10, "scheduled");
+
+  // White Mountain Getaways — 3 properties (Jackson, Bartlett, Intervale)
+  turnoverJob("Jackson Falls House", -12, "completed", { customerNotes: "Large group left extra trash bags by garage — please confirm pickup." });
+  turnoverJob("Jackson Falls House", -5, "invoiced");
+  turnoverJob("Jackson Falls House", 2, "scheduled");
+  turnoverJob("Jackson Falls House", 12, "scheduled");
+  turnoverJob("Bartlett Brook Cottage", -10, "completed");
+  turnoverJob("Bartlett Brook Cottage", -3, "completed");
+  turnoverJob("Bartlett Brook Cottage", 4, "scheduled");
+  turnoverJob("Intervale Meadow Cabin", -8, "in_progress");
+  turnoverJob("Intervale Meadow Cabin", 1, "scheduled");
+  turnoverJob("Intervale Meadow Cabin", 9, "scheduled");
+
+  // Sarah & Tom Whitfield — Birch Ridge Cabin (turnover)
+  turnoverJob("Birch Ridge Cabin", -6, "completed");
+  turnoverJob("Birch Ridge Cabin", 3, "scheduled");
+  turnoverJob("Birch Ridge Cabin", 13, "scheduled");
+
+  // Daniel Ferreira — Tamworth + Madison
+  turnoverJob("Tamworth Trailhead House", -9, "completed");
+  turnoverJob("Tamworth Trailhead House", -1, "invoiced");
+  turnoverJob("Tamworth Trailhead House", 6, "scheduled");
+  turnoverJob("Madison Village Cottage", -4, "completed");
+  turnoverJob("Madison Village Cottage", 7, "scheduled");
+
+  // Loon Mountain Lodging Group — 2 units, ski-season high turnover
+  turnoverJob("Loon Base Lodge Unit 12", -13, "completed");
+  turnoverJob("Loon Base Lodge Unit 12", -7, "completed");
+  turnoverJob("Loon Base Lodge Unit 12", 0, "in_progress");
+  turnoverJob("Loon Base Lodge Unit 12", 5, "scheduled");
+  turnoverJob("Loon Base Lodge Unit 18", -10, "invoiced");
+  turnoverJob("Loon Base Lodge Unit 18", -2, "completed");
+  turnoverJob("Loon Base Lodge Unit 18", 4, "scheduled");
+  turnoverJob("Loon Base Lodge Unit 18", 11, "scheduled");
+
+  // Priya Nair — Kancamagus Ridge Retreat: quarterly deep clean + turnover mix
+  {
+    const p = byPropName("Kancamagus Ridge Retreat");
+    turnoverJob("Kancamagus Ridge Retreat", -12, "completed");
+    turnoverJob("Kancamagus Ridge Retreat", 2, "scheduled");
+    addJob({
+      propertyId: p.id,
+      customerId: p.customerId,
+      scheduleId: null,
+      jobTemplateId: deepCleanTemplate.id,
+      jobType: "deep_clean",
+      scheduledDate: isoDaysFromToday(9),
+      scheduledTime: "09:00",
+      durationMinutes: deepCleanTemplate.defaultDurationMinutes,
+      status: "scheduled",
+      internalNotes: "Quarterly deep clean — include fridge/oven interior and window washing per owner request.",
+      customerNotes: null,
+      price: deepCleanTemplate.defaultPrice,
+      completedAt: null,
+    });
+  }
+
+  // Conway Lakeside Cottages — 2 cottages, weekly in-season (some from the schedule)
+  turnoverJob("Lakeside Cottage A", -13, "completed", { jobType: "turnover" });
+  turnoverJob("Lakeside Cottage A", -6, "completed");
+  turnoverJob("Lakeside Cottage A", 1, "scheduled");
+  turnoverJob("Lakeside Cottage A", 8, "scheduled");
+  turnoverJob("Lakeside Cottage B", -13, "completed");
+  turnoverJob("Lakeside Cottage B", -6, "invoiced");
+  turnoverJob("Lakeside Cottage B", 1, "scheduled");
+  turnoverJob("Lakeside Cottage B", 8, "scheduled");
+
+  // The Hendricks Family — recurring biweekly residential, tied to the schedule
+  {
+    const p = byPropName("Hendricks Residence");
+    const biweeklyOffsets = [-14, 0, 14];
+    const biweeklyStatuses: JobRow["status"][] = ["completed", "in_progress", "scheduled"];
+    biweeklyOffsets.forEach((offset, idx) => {
+      addJob({
+        propertyId: p.id,
+        customerId: p.customerId,
+        scheduleId: hendricksSchedule.id,
+        jobTemplateId: turnoverTemplate.id,
+        jobType: "recurring",
+        scheduledDate: isoDaysFromToday(offset),
+        scheduledTime: "09:00",
+        durationMinutes: 90,
+        status: biweeklyStatuses[idx],
+        internalNotes: "Family typically present — coordinate arrival by text before heading over.",
+        customerNotes: null,
+        price: p.basePrice,
+        completedAt: biweeklyStatuses[idx] === "completed" ? isoDaysFromToday(offset) + "T11:00:00" : null,
+        assignedStaffId: staffByName("Maya Lindqvist").id,
+      });
+    });
+  }
+
+  // One inspection walkthrough (White Mountain Getaways, between-season check)
+  {
+    const p = byPropName("Intervale Meadow Cabin");
+    addJob({
+      propertyId: p.id,
+      customerId: p.customerId,
+      scheduleId: null,
+      jobTemplateId: inspectionTemplate.id,
+      jobType: "inspection",
+      scheduledDate: isoDaysFromToday(-3),
+      scheduledTime: "10:00",
+      durationMinutes: inspectionTemplate.defaultDurationMinutes,
+      status: "completed",
+      internalNotes: "Well water softener salt checked — office task, logged separately.",
+      customerNotes: null,
+      price: inspectionTemplate.defaultPrice,
+      completedAt: isoDaysFromToday(-3) + "T10:50:00",
+      assignedStaffId: staffByName("Owen Petrucci").id,
+    });
+  }
+
+  // One one-time custom job (Coastal Vista — special post-storm cleanup request)
+  {
+    const p = byPropName("Cranmore View Condo 3B");
+    addJob({
+      propertyId: p.id,
+      customerId: p.customerId,
+      scheduleId: null,
+      jobTemplateId: customTemplate.id,
+      jobType: "one_time",
+      scheduledDate: isoDaysFromToday(6),
+      scheduledTime: "13:00",
+      durationMinutes: customTemplate.defaultDurationMinutes,
+      status: "scheduled",
+      internalNotes: "One-time request: touch-up clean after contractor left drywall dust throughout unit.",
+      customerNotes: "Please pay extra attention to dust on window sills and vents.",
+      price: 120,
+      completedAt: null,
+    });
+  }
+
+  const insertedJobs = db.insert(jobs).values(jobRows).returning().all();
+  console.log(`Inserted ${insertedJobs.length} jobs.`);
+
+  // --- Service checklists: from job_templates.defaultChecklist, for a few
+  //     completed/in-progress/invoiced jobs (demonstrates checked/unchecked state) ---
+  const checklistTargets = insertedJobs.filter(
+    (j) => j.status === "completed" || j.status === "in_progress" || j.status === "invoiced"
+  ).slice(0, 8);
+
+  const checklistRows = checklistTargets.flatMap((job) => {
+    const template = insertedTemplates.find((t) => t.id === job.jobTemplateId);
+    if (!template) return [];
+    const items: string[] = JSON.parse(template.defaultChecklist);
+    const allDone = job.status === "completed" || job.status === "invoiced";
+    return items.map((label, idx) => ({
+      jobId: job.id,
+      label,
+      isCompleted: allDone ? true : idx < Math.ceil(items.length / 2),
+      sortOrder: idx,
+    }));
+  });
+  if (checklistRows.length > 0) {
+    db.insert(serviceChecklists).values(checklistRows).run();
+  }
+  console.log(`Inserted ${checklistRows.length} checklist items across ${checklistTargets.length} jobs.`);
 
   console.log("Seed complete.");
 }

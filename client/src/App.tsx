@@ -17,6 +17,9 @@ import CustomersListPage from "@/pages/customers-list";
 import CustomerDetailPage from "@/pages/customer-detail";
 import PropertiesListPage from "@/pages/properties-list";
 import PropertyDetailPage from "@/pages/property-detail";
+import SchedulingPage from "@/pages/scheduling";
+import JobsListPage from "@/pages/jobs-list";
+import JobDetailPage from "@/pages/job-detail";
 import { ComingSoonPage } from "@/pages/coming-soon";
 
 function AppRouter({
@@ -35,12 +38,9 @@ function AppRouter({
       <Route path="/customers/:id" component={CustomerDetailPage} />
       <Route path="/properties" component={PropertiesListPage} />
       <Route path="/properties/:id" component={PropertyDetailPage} />
-      <Route path="/scheduling">
-        <ComingSoonPage title="Scheduling" />
-      </Route>
-      <Route path="/jobs">
-        <ComingSoonPage title="Jobs" />
-      </Route>
+      <Route path="/scheduling" component={SchedulingPage} />
+      <Route path="/jobs" component={JobsListPage} />
+      <Route path="/jobs/:id" component={JobDetailPage} />
       <Route path="/invoices">
         <ComingSoonPage title="Invoices" />
       </Route>

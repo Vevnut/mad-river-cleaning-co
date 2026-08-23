@@ -19,7 +19,15 @@ import type {
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
-import { eq } from "drizzle-orm";
+import { eq, and, gte, lte, type SQL } from "drizzle-orm";
+
+export interface JobFilter {
+  status?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  propertyId?: number;
+  jobType?: string;
+}
 
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
@@ -84,8 +92,8 @@ export interface IStorage {
   updateSchedule(id: number, data: Partial<InsertSchedule>): Promise<Schedule | undefined>;
   deleteSchedule(id: number): Promise<boolean>;
 
-  // --- jobs (scaffolded, Phase 2) ---
-  getJobs(): Promise<Job[]>;
+  // --- jobs (full CRUD, Phase 2) ---
+  getJobs(filter?: JobFilter): Promise<Job[]>;
   getJob(id: number): Promise<Job | undefined>;
   getJobsByProperty(propertyId: number): Promise<Job[]>;
   getJobsByCustomer(customerId: number): Promise<Job[]>;
@@ -268,8 +276,16 @@ export class DatabaseStorage implements IStorage {
   }
 
   // ---------------- jobs ----------------
-  async getJobs(): Promise<Job[]> {
-    return db.select().from(jobs).all();
+  async getJobs(filter?: JobFilter): Promise<Job[]> {
+    const conditions: SQL[] = [];
+    if (filter?.status) conditions.push(eq(jobs.status, filter.status as any));
+    if (filter?.dateFrom) conditions.push(gte(jobs.scheduledDate, filter.dateFrom));
+    if (filter?.dateTo) conditions.push(lte(jobs.scheduledDate, filter.dateTo));
+    if (filter?.propertyId !== undefined) conditions.push(eq(jobs.propertyId, filter.propertyId));
+    if (filter?.jobType) conditions.push(eq(jobs.jobType, filter.jobType as any));
+
+    if (conditions.length === 0) return db.select().from(jobs).all();
+    return db.select().from(jobs).where(and(...conditions)).all();
   }
   async getJob(id: number): Promise<Job | undefined> {
     return db.select().from(jobs).where(eq(jobs.id, id)).get();
