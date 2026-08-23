@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================
+   RIDGELINE — cool slate neutrals, teal/cyan primary accent.
+   Status colors: scheduled=slate-blue, in_progress=amber,
+   completed/primary=teal, invoiced=purple, paid=green,
+   partial=amber-gold, overdue=rose/red, canceled=muted gray.
+   ============================================================ */
+
 /* LIGHT MODE */
 :root {
   --button-outline: rgba(0, 0, 0, 0.1);
@@ -9,43 +16,62 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0, 0, 0, 0.03);
   --elevate-2: rgba(0, 0, 0, 0.08);
-  --background: 0 0% 100%;
-  --foreground: 0 0% 9%;
-  --border: 0 0% 91%;
-  --card: 0 0% 98%;
-  --card-foreground: 0 0% 9%;
-  --card-border: 0 0% 94%;
-  --sidebar: 0 0% 96%;
-  --sidebar-foreground: 0 0% 9%;
-  --sidebar-border: 0 0% 92%;
-  --sidebar-primary: 221 83% 53%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 0 0% 89%;
-  --sidebar-accent-foreground: 0 0% 9%;
-  --sidebar-ring: 221 83% 53%;
-  --popover: 0 0% 95%;
-  --popover-foreground: 0 0% 9%;
-  --popover-border: 0 0% 91%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 92%;
-  --secondary-foreground: 0 0% 9%;
-  --muted: 0 0% 93%;
-  --muted-foreground: 0 0% 40%;
-  --accent: 220 14% 92%;
-  --accent-foreground: 0 0% 9%;
-  --destructive: 0 84% 42%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 0 0% 75%;
-  --ring: 221 83% 53%;
-  --chart-1: 221 83% 45%;
-  --chart-2: 262 83% 48%;
-  --chart-3: 173 58% 39%;
-  --chart-4: 43 74% 49%;
-  --chart-5: 27 87% 55%;
-  --font-sans: Open Sans, sans-serif;
+  --background: 200 20% 98%;
+  --foreground: 200 35% 12%;
+  --border: 200 16% 88%;
+  --card: 195 25% 99%;
+  --card-foreground: 200 35% 12%;
+  --card-border: 200 16% 91%;
+  --sidebar: 200 28% 14%;
+  --sidebar-foreground: 195 20% 92%;
+  --sidebar-border: 200 26% 20%;
+  --sidebar-primary: 190 75% 40%;
+  --sidebar-primary-foreground: 0 0% 100%;
+  --sidebar-accent: 200 26% 20%;
+  --sidebar-accent-foreground: 195 20% 94%;
+  --sidebar-ring: 190 75% 40%;
+  --popover: 195 25% 99%;
+  --popover-foreground: 200 35% 12%;
+  --popover-border: 200 16% 88%;
+  --primary: 190 78% 34%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 200 18% 93%;
+  --secondary-foreground: 200 35% 15%;
+  --muted: 200 18% 94%;
+  --muted-foreground: 200 12% 42%;
+  --accent: 190 40% 92%;
+  --accent-foreground: 200 35% 14%;
+  --destructive: 350 78% 48%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 200 14% 80%;
+  --ring: 190 78% 34%;
+  --chart-1: 190 78% 38%;
+  --chart-2: 262 55% 55%;
+  --chart-3: 38 92% 50%;
+  --chart-4: 350 72% 52%;
+  --chart-5: 145 45% 40%;
+
+  /* Status semantic tokens (paired with text/icon everywhere, never color alone) */
+  --status-scheduled: 213 40% 52%;
+  --status-scheduled-bg: 213 45% 94%;
+  --status-in-progress: 38 92% 48%;
+  --status-in-progress-bg: 40 92% 93%;
+  --status-completed: 190 78% 34%;
+  --status-completed-bg: 190 55% 92%;
+  --status-invoiced: 262 55% 55%;
+  --status-invoiced-bg: 262 45% 94%;
+  --status-paid: 145 55% 34%;
+  --status-paid-bg: 145 45% 92%;
+  --status-partial: 32 88% 45%;
+  --status-partial-bg: 32 80% 92%;
+  --status-overdue: 350 78% 48%;
+  --status-overdue-bg: 350 70% 95%;
+  --status-canceled: 200 8% 55%;
+  --status-canceled-bg: 200 10% 92%;
+
+  --font-sans: 'General Sans', 'Inter', sans-serif;
   --font-serif: Georgia, serif;
-  --font-mono: Menlo, monospace;
+  --font-mono: 'JetBrains Mono', Menlo, monospace;
   --radius: 0.5rem;
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
   --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
@@ -107,40 +133,57 @@
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255, 255, 255, 0.04);
   --elevate-2: rgba(255, 255, 255, 0.09);
-  --background: 0 0% 7%;
-  --foreground: 0 0% 98%;
-  --border: 0 0% 16%;
-  --card: 0 0% 9%;
-  --card-foreground: 0 0% 98%;
-  --card-border: 0 0% 13%;
-  --sidebar: 0 0% 11%;
-  --sidebar-foreground: 0 0% 98%;
-  --sidebar-border: 0 0% 15%;
-  --sidebar-primary: 221 83% 53%;
-  --sidebar-primary-foreground: 0 0% 98%;
-  --sidebar-accent: 0 0% 16%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 221 83% 53%;
-  --popover: 0 0% 13%;
-  --popover-foreground: 0 0% 98%;
-  --popover-border: 0 0% 17%;
-  --primary: 221 83% 53%;
-  --primary-foreground: 0 0% 98%;
-  --secondary: 0 0% 18%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 0 0% 19%;
-  --muted-foreground: 0 0% 65%;
-  --accent: 220 9% 17%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 84% 42%;
-  --destructive-foreground: 0 0% 98%;
-  --input: 0 0% 30%;
-  --ring: 221 83% 53%;
-  --chart-1: 221 83% 65%;
-  --chart-2: 262 83% 68%;
-  --chart-3: 173 58% 55%;
-  --chart-4: 43 74% 65%;
-  --chart-5: 27 87% 65%;
+  --background: 200 22% 8%;
+  --foreground: 195 20% 92%;
+  --border: 200 18% 18%;
+  --card: 200 22% 10%;
+  --card-foreground: 195 20% 92%;
+  --card-border: 200 18% 15%;
+  --sidebar: 202 26% 9%;
+  --sidebar-foreground: 195 18% 88%;
+  --sidebar-border: 200 22% 16%;
+  --sidebar-primary: 190 65% 48%;
+  --sidebar-primary-foreground: 200 30% 8%;
+  --sidebar-accent: 200 20% 17%;
+  --sidebar-accent-foreground: 195 20% 94%;
+  --sidebar-ring: 190 65% 48%;
+  --popover: 200 22% 11%;
+  --popover-foreground: 195 20% 92%;
+  --popover-border: 200 18% 18%;
+  --primary: 190 65% 48%;
+  --primary-foreground: 200 30% 8%;
+  --secondary: 200 18% 17%;
+  --secondary-foreground: 195 18% 90%;
+  --muted: 200 18% 16%;
+  --muted-foreground: 200 10% 62%;
+  --accent: 190 30% 18%;
+  --accent-foreground: 195 20% 92%;
+  --destructive: 350 70% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 200 16% 26%;
+  --ring: 190 65% 48%;
+  --chart-1: 190 65% 52%;
+  --chart-2: 262 55% 68%;
+  --chart-3: 38 85% 58%;
+  --chart-4: 350 65% 62%;
+  --chart-5: 145 40% 50%;
+
+  --status-scheduled: 213 55% 65%;
+  --status-scheduled-bg: 213 30% 18%;
+  --status-in-progress: 38 85% 58%;
+  --status-in-progress-bg: 38 40% 18%;
+  --status-completed: 190 60% 52%;
+  --status-completed-bg: 190 35% 17%;
+  --status-invoiced: 262 55% 68%;
+  --status-invoiced-bg: 262 30% 19%;
+  --status-paid: 145 45% 55%;
+  --status-paid-bg: 145 30% 16%;
+  --status-partial: 34 80% 58%;
+  --status-partial-bg: 34 35% 18%;
+  --status-overdue: 350 70% 62%;
+  --status-overdue-bg: 350 35% 18%;
+  --status-canceled: 200 8% 55%;
+  --status-canceled-bg: 200 12% 18%;
   --shadow-2xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
   --shadow-xs: 0px 2px 0px 0px hsl(0 0% 0% / 0);
   --shadow-sm: 0px 2px 0px 0px hsl(0 0% 0% / 0), 0px 1px 2px -1px hsl(0 0% 0% / 0);
@@ -198,8 +241,18 @@
     @apply border-border;
   }
 
+  html, body {
+    height: 100%;
+    overflow: hidden;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  #root {
+    height: 100%;
   }
 }
 

@@ -1,30 +1,97 @@
+import { useState } from "react";
 import { Switch, Route, Router } from "wouter";
 import { useHashLocation } from "wouter/use-hash-location";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { AppHeader } from "@/components/app-header";
+import { ThemeProvider } from "@/components/theme-provider";
+import { CustomerFormDialog } from "@/components/customers/customer-form-dialog";
+import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
 import NotFound from "@/pages/not-found";
+import DashboardPage from "@/pages/dashboard";
+import CustomersListPage from "@/pages/customers-list";
+import CustomerDetailPage from "@/pages/customer-detail";
+import PropertiesListPage from "@/pages/properties-list";
+import PropertyDetailPage from "@/pages/property-detail";
+import { ComingSoonPage } from "@/pages/coming-soon";
 
-function AppRouter() {
+function AppRouter({
+  onNewCustomer,
+  onNewProperty,
+}: {
+  onNewCustomer: () => void;
+  onNewProperty: () => void;
+}) {
   return (
     <Switch>
-      {/* Register a <Route path="..." component={...} /> for EVERY page linked in your sidebar/nav. Missing routes cause 404. */}
-      {/* <Route path="/" component={Home}/> */}
+      <Route path="/">
+        <DashboardPage onNewCustomer={onNewCustomer} onNewProperty={onNewProperty} />
+      </Route>
+      <Route path="/customers" component={CustomersListPage} />
+      <Route path="/customers/:id" component={CustomerDetailPage} />
+      <Route path="/properties" component={PropertiesListPage} />
+      <Route path="/properties/:id" component={PropertyDetailPage} />
+      <Route path="/scheduling">
+        <ComingSoonPage title="Scheduling" />
+      </Route>
+      <Route path="/jobs">
+        <ComingSoonPage title="Jobs" />
+      </Route>
+      <Route path="/invoices">
+        <ComingSoonPage title="Invoices" />
+      </Route>
+      <Route path="/reports">
+        <ComingSoonPage title="Reports" />
+      </Route>
+      <Route path="/settings">
+        <ComingSoonPage title="Settings" />
+      </Route>
       <Route component={NotFound} />
     </Switch>
   );
 }
 
 function App() {
+  const [newCustomerOpen, setNewCustomerOpen] = useState(false);
+  const [newPropertyOpen, setNewPropertyOpen] = useState(false);
+
+  const style = {
+    "--sidebar-width": "16rem",
+    "--sidebar-width-icon": "3.5rem",
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Router hook={useHashLocation}>
-          <AppRouter />
-        </Router>
-      </TooltipProvider>
+      <ThemeProvider>
+        <TooltipProvider>
+          <Router hook={useHashLocation}>
+            <SidebarProvider style={style as React.CSSProperties}>
+              <div className="flex h-screen w-full overflow-hidden">
+                <AppSidebar />
+                <div className="flex flex-1 flex-col overflow-hidden">
+                  <AppHeader
+                    onNewCustomer={() => setNewCustomerOpen(true)}
+                    onNewProperty={() => setNewPropertyOpen(true)}
+                  />
+                  <main className="flex-1 overflow-y-auto" style={{ overscrollBehavior: "contain" }}>
+                    <AppRouter
+                      onNewCustomer={() => setNewCustomerOpen(true)}
+                      onNewProperty={() => setNewPropertyOpen(true)}
+                    />
+                  </main>
+                </div>
+              </div>
+            </SidebarProvider>
+          </Router>
+          <Toaster />
+          <CustomerFormDialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen} />
+          <PropertyFormDialog open={newPropertyOpen} onOpenChange={setNewPropertyOpen} />
+        </TooltipProvider>
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
