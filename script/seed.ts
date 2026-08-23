@@ -913,7 +913,17 @@ function run() {
   const invoicedOrCompleted = insertedJobs.filter(
     (j) => j.status === "invoiced" || j.status === "completed"
   );
-  const invoiceTargets = invoicedOrCompleted.slice(0, 6);
+  // Spread sample invoices across distinct customers for realistic variety
+  // (picking the first N jobs in insertion order can otherwise land on a
+  // single customer if that customer happens to have many early jobs).
+  const seenCustomers = new Set<number>();
+  const diverseTargets = invoicedOrCompleted.filter((j) => {
+    if (seenCustomers.has(j.customerId)) return false;
+    seenCustomers.add(j.customerId);
+    return true;
+  });
+  const invoiceTargets =
+    diverseTargets.length >= 6 ? diverseTargets.slice(0, 6) : invoicedOrCompleted.slice(0, 6);
 
   const seededInvoices = [
     // 2 fully paid
