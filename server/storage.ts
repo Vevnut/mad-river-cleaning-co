@@ -378,14 +378,14 @@ export class DatabaseStorage implements IStorage {
     if (existing) return existing;
     return db.insert(appSettings).values({
       id: 1,
-      businessName: "Ridgeline Cleaning Ops",
-      businessAddress: "118 White Mountain Hwy, Conway, NH 03818",
-      businessPhone: "603-555-0100",
-      businessEmail: "office@ridgelinecleaningops.com",
+      businessName: "Mad River Cleaning Co.",
+      businessAddress: "Thornton, NH",
+      businessPhone: "(603) 707-9205",
+      businessEmail: "madrivercleaningco@gmail.com",
       defaultTaxRate: 0.08,
       defaultPaymentTermsDays: 15,
       invoiceNumberPrefix: "INV",
-      invoiceFooterNote: "Thank you for choosing Ridgeline Cleaning Ops. Payment due within terms noted above.",
+      invoiceFooterNote: "Thank you for choosing Mad River Cleaning Co. Payment due within terms noted above.",
     } as InsertAppSettings).returning().get();
   }
   async updateSettings(data: Partial<InsertAppSettings>): Promise<AppSettings> {

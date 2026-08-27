@@ -7,7 +7,7 @@ import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
   SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarHeader, SidebarFooter,
 } from "@/components/ui/sidebar";
-import { RidgelineLogo } from "@/components/logo";
+import { MadRiverLogo } from "@/components/logo";
 
 const NAV_ITEMS = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard, testId: "dashboard" },
@@ -26,7 +26,7 @@ export function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader className="px-3 py-3">
-        <RidgelineLogo className="flex items-center gap-2 px-1" />
+        <MadRiverLogo className="flex items-center gap-2 px-1" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -52,7 +52,7 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="px-3 py-3">
-        <p className="text-xs text-muted-foreground px-1">Ridgeline Cleaning Ops</p>
+        <p className="text-xs text-muted-foreground px-1">Mad River Cleaning Co.</p>
       </SidebarFooter>
     </Sidebar>
   );

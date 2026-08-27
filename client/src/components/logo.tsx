@@ -1,40 +1,25 @@
 /**
- * Ridgeline logo — geometric zigzag ridge-line mark forming an abstract "R"
- * silhouette. Monochrome via currentColor, works at 24px and 200px, no gradients.
+ * Mad River Cleaning Co. logo — the client's real brand mark (mountains,
+ * pines, and winding river inside a navy circle), supplied as a raster
+ * image at /logo.png. Rendered as a small circular badge next to the
+ * wordmark in the sidebar, or standalone via MadRiverMark.
  */
-export function RidgelineMark({ className }: { className?: string }) {
+export function MadRiverMark({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 32 32"
-      fill="none"
-      className={className}
-      aria-label="Ridgeline"
-      role="img"
-    >
-      <path
-        d="M4 24 L9 12 L13 18 L17 6 L21 16 L24 10 L28 24"
-        stroke="currentColor"
-        strokeWidth="2.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        fill="none"
-      />
-      <path
-        d="M4 24 L9 12 L13 18 L17 6 L21 16 L24 10 L28 24 Z"
-        fill="currentColor"
-        fillOpacity="0.12"
-        stroke="none"
-      />
-    </svg>
+    <img
+      src="/logo.png"
+      alt="Mad River Cleaning Co."
+      className={className ?? "h-6 w-6 shrink-0 rounded-full object-cover"}
+    />
   );
 }
 
-export function RidgelineLogo({ className }: { className?: string }) {
+export function MadRiverLogo({ className }: { className?: string }) {
   return (
     <div className={className ?? "flex items-center gap-2"}>
-      <RidgelineMark className="h-6 w-6 text-primary shrink-0" />
+      <MadRiverMark className="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-white/10" />
       <span className="font-semibold text-sm tracking-tight leading-none">
-        Ridgeline
+        Mad River Cleaning Co.
       </span>
     </div>
   );

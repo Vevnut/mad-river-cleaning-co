@@ -1,4 +1,4 @@
-# Ridgeline — Roadmap
+# Mad River Cleaning Co. — Roadmap
 
 Phases 1-3 below are complete and shipped in this build. "Phase 2 of the
 business roadmap" (last section) is the forward-looking list — the features

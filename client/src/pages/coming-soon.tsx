@@ -8,7 +8,7 @@ export function ComingSoonPage({ title }: { title: string }) {
       </div>
       <h1 className="text-xl font-semibold" data-testid="text-page-title">{title}</h1>
       <p className="max-w-sm text-sm text-muted-foreground">
-        This section is coming in a later phase of the Ridgeline build. Check back soon.
+        This section is coming in a later phase of the Mad River Cleaning Co. build. Check back soon.
       </p>
     </div>
   );

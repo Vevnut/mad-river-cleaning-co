@@ -3,7 +3,7 @@ import { createInsertSchema } from "drizzle-zod";
 import type { z } from "zod";
 
 /* ============================================================================
- * Ridgeline Cleaning Ops — Data Model
+ * Mad River Cleaning Co. — Data Model
  * SQLite now (better-sqlite3 + Drizzle), designed to map 1:1 to Postgres later.
  * JSON list columns (defaultChecklist, beforePhotos, afterPhotos) are stored
  * as TEXT and JSON.stringify/parse'd in application code — see SCHEMA.md.
@@ -297,7 +297,7 @@ export type Attachment = typeof attachments.$inferSelect;
 // ---------------------------------------------------------------------------
 export const appSettings = sqliteTable("app_settings", {
   id: integer("id").primaryKey({ autoIncrement: true }),
-  businessName: text("business_name").notNull().default("Ridgeline Cleaning Ops"),
+  businessName: text("business_name").notNull().default("Mad River Cleaning Co."),
   businessAddress: text("business_address").notNull().default(""),
   businessPhone: text("business_phone").notNull().default(""),
   businessEmail: text("business_email").notNull().default(""),

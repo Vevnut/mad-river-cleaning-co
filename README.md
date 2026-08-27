@@ -1,4 +1,4 @@
-# Ridgeline — Cleaning Ops
+# Mad River Cleaning Co.
 
 Operations software for a White Mountains, NH turnover-cleaning company
 serving Airbnb hosts, vacation-rental managers, and recurring residential

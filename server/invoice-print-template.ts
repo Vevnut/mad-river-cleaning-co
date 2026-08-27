@@ -1,8 +1,8 @@
 // ─── Server-rendered printable Invoice HTML (Phase 3) ─────────────────────
 // Adapted from reference-boats-and-notes/server/pdf-template.ts — teal accent
-// per Ridgeline brand, cleaning line items instead of parts/labor.
+// per Mad River Cleaning Co. brand, cleaning line items instead of parts/labor.
 
-const TEAL = "#0e7490";
+const TEAL = "#223a59"; // Mad River Cleaning Co. navy brand accent (sampled from logo)
 
 function esc(s: any): string {
   if (s === null || s === undefined) return "";
@@ -89,7 +89,7 @@ function statusBannerStyle(status: string): string {
     case "canceled":
       return "background:#f1f2f3;color:#666;border:1px solid #dcdfe2;";
     default:
-      return `background:#e8f4f7;color:${TEAL};border:1px solid #b0d4df;`;
+      return `background:#e2eaf3;color:${TEAL};border:1px solid #b3c5db;`;
   }
 }
 

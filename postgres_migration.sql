@@ -1,5 +1,5 @@
 -- ============================================================================
--- Ridgeline Cleaning Ops — Postgres / Supabase migration DDL
+-- Mad River Cleaning Co. — Postgres / Supabase migration DDL
 -- Target for Phase 2/3 migration off SQLite. Uses uuid PKs, real REFERENCES
 -- constraints, timestamptz, numeric(10,2) for money, native boolean, and
 -- text[] / jsonb where SQLite required JSON-as-text.
@@ -251,7 +251,7 @@ create index idx_attachments_entity on attachments(entity_type, entity_id);
 -- ---------------------------------------------------------------------------
 create table app_settings (
   id                            uuid primary key default gen_random_uuid(),
-  business_name                 text not null default 'Ridgeline Cleaning Ops',
+  business_name                 text not null default 'Mad River Cleaning Co.',
   business_address              text not null default '',
   business_phone                text not null default '',
   business_email                text not null default '',

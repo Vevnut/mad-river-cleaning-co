@@ -15,7 +15,7 @@ import {
 } from "../shared/schema";
 
 function run() {
-  console.log("Seeding Ridgeline database...");
+  console.log("Seeding Mad River Cleaning Co. database...");
 
   // Clear existing rows for idempotent re-seeding (children first, FK order)
   db.delete(payments).run();
@@ -402,11 +402,11 @@ function run() {
   // Staff — 1 admin, 1 office, 3 cleaners
   // ---------------------------------------------------------------------
   const insertedStaff = db.insert(staff).values([
-    { name: "Ellen Marsh", role: "admin", email: "ellen@ridgelinecleaning.com", phone: "603-555-1001", colorTag: "#0e7c86", active: true },
-    { name: "Owen Petrucci", role: "office", email: "owen@ridgelinecleaning.com", phone: "603-555-1002", colorTag: "#7a39bb", active: true },
-    { name: "Maya Lindqvist", role: "cleaner", email: "maya@ridgelinecleaning.com", phone: "603-555-1003", colorTag: "#2f9e44", active: true },
-    { name: "Jorge Fuentes", role: "cleaner", email: "jorge@ridgelinecleaning.com", phone: "603-555-1004", colorTag: "#e8590c", active: true },
-    { name: "Alicia Beaumont", role: "cleaner", email: "alicia@ridgelinecleaning.com", phone: "603-555-1005", colorTag: "#d6336c", active: true },
+    { name: "Ellen Marsh", role: "admin", email: "ellen@madrivercleaningco.com", phone: "603-555-1001", colorTag: "#223a59", active: true },
+    { name: "Owen Petrucci", role: "office", email: "owen@madrivercleaningco.com", phone: "603-555-1002", colorTag: "#7a39bb", active: true },
+    { name: "Maya Lindqvist", role: "cleaner", email: "maya@madrivercleaningco.com", phone: "603-555-1003", colorTag: "#2f9e44", active: true },
+    { name: "Jorge Fuentes", role: "cleaner", email: "jorge@madrivercleaningco.com", phone: "603-555-1004", colorTag: "#e8590c", active: true },
+    { name: "Alicia Beaumont", role: "cleaner", email: "alicia@madrivercleaningco.com", phone: "603-555-1005", colorTag: "#d6336c", active: true },
   ]).returning().all();
 
   console.log(`Inserted ${insertedStaff.length} staff members.`);
@@ -777,14 +777,14 @@ function run() {
   // =======================================================================
   const settingsRow = db.insert(appSettings).values({
     id: 1,
-    businessName: "Ridgeline Cleaning Ops",
-    businessAddress: "118 White Mountain Hwy, Conway, NH 03818",
-    businessPhone: "603-555-0100",
-    businessEmail: "office@ridgelinecleaningops.com",
+    businessName: "Mad River Cleaning Co.",
+    businessAddress: "Thornton, NH",
+    businessPhone: "(603) 707-9205",
+    businessEmail: "madrivercleaningco@gmail.com",
     defaultTaxRate: 0.08,
     defaultPaymentTermsDays: 15,
     invoiceNumberPrefix: "INV",
-    invoiceFooterNote: "Thank you for choosing Ridgeline Cleaning Ops. Payment due within terms noted above.",
+    invoiceFooterNote: "Thank you for choosing Mad River Cleaning Co. Payment due within terms noted above.",
     notifyJobReminders: true,
     notifyInvoiceOverdue: true,
     notifyPaymentReceived: true,

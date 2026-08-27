@@ -1,6 +1,6 @@
-# Ridgeline — Data Model (SCHEMA.md)
+# Mad River Cleaning Co. — Data Model (SCHEMA.md)
 
-This document is the canonical table plan for the Ridgeline Cleaning Ops data
+This document is the canonical table plan for the Mad River Cleaning Co. data
 model. It mirrors `shared/schema.ts` (Drizzle ORM, SQLite via better-sqlite3
 for local dev) and is designed to migrate 1:1 to Postgres/Supabase — see
 `postgres_migration.sql` in this same directory for the target DDL.
@@ -227,7 +227,7 @@ static notification toggles surfaced on the Settings page.
 | Column | Type | Notes |
 |---|---|---|
 | id | integer, PK | always 1 |
-| businessName | text, not null, default "Ridgeline Cleaning Ops" | |
+| businessName | text, not null, default "Mad River Cleaning Co." | |
 | businessAddress | text, not null, default "" | |
 | businessPhone | text, not null, default "" | |
 | businessEmail | text, not null, default "" | |

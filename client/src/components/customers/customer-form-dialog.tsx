@@ -126,7 +126,7 @@ export function CustomerFormDialog({
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit Customer" : "New Customer"}</DialogTitle>
           <DialogDescription>
-            {isEdit ? "Update customer details." : "Add a new customer to Ridgeline."}
+            {isEdit ? "Update customer details." : "Add a new customer to Mad River Cleaning Co."}
           </DialogDescription>
         </DialogHeader>
         <Form {...form}>
