@@ -18,6 +18,7 @@ import CustomerDetailPage from "@/pages/customer-detail";
 import PropertiesListPage from "@/pages/properties-list";
 import PropertyDetailPage from "@/pages/property-detail";
 import SchedulingPage from "@/pages/scheduling";
+import StaysPage from "@/pages/stays";
 import JobsListPage from "@/pages/jobs-list";
 import JobDetailPage from "@/pages/job-detail";
 import InvoicesListPage from "@/pages/invoices-list";
@@ -43,6 +44,7 @@ function AppRouter({
       <Route path="/properties" component={PropertiesListPage} />
       <Route path="/properties/:id" component={PropertyDetailPage} />
       <Route path="/scheduling" component={SchedulingPage} />
+      <Route path="/stays" component={StaysPage} />
       <Route path="/jobs" component={JobsListPage} />
       <Route path="/jobs/:id" component={JobDetailPage} />
       <Route path="/invoices/new" component={InvoiceNewPage} />

@@ -17,12 +17,13 @@ import {
   insertPaymentSchema,
   insertAttachmentSchema,
   insertAppSettingsSchema,
+  insertStaySchema,
 } from "@shared/schema";
 import type {
   InsertCustomer, InsertContact, InsertProperty, InsertNote,
   InsertStaff, InsertJobTemplate, InsertServiceChecklist, InsertSchedule, InsertJob,
   InsertInvoice, InsertInvoiceItem, InsertPayment, InsertAttachment, InsertAppSettings,
-  InvoiceItem,
+  InvoiceItem, InsertStay,
 } from "@shared/schema";
 import { computeInvoiceTotals, deriveInvoiceStatus, round2 } from "./invoice-utils";
 import { renderInvoicePrintHtml } from "./invoice-print-template";
@@ -353,6 +354,60 @@ export async function registerRoutes(
   app.delete("/api/jobs/:id", async (req, res) => {
     const ok = await storage.deleteJob(Number(req.params.id));
     if (!ok) return res.status(404).json({ message: "Job not found" });
+    res.status(204).send();
+  });
+
+  // =========================================================================
+  // Stays — guest bookings/reservations (full CRUD). Powers the Stays
+  // calendar, which renders each stay as a multi-day bar per property.
+  // =========================================================================
+  app.get("/api/stays", async (req, res) => {
+    const { propertyId, dateFrom, dateTo } = req.query;
+    const data = await storage.getStays({
+      propertyId: propertyId ? Number(propertyId) : undefined,
+      dateFrom: typeof dateFrom === "string" ? dateFrom : undefined,
+      dateTo: typeof dateTo === "string" ? dateTo : undefined,
+    });
+    res.json(data);
+  });
+
+  app.get("/api/stays/:id", async (req, res) => {
+    const stay = await storage.getStay(Number(req.params.id));
+    if (!stay) return res.status(404).json({ message: "Stay not found" });
+    res.json(stay);
+  });
+
+  app.post("/api/stays", async (req, res) => {
+    const parsed = insertStaySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid stay data", errors: parsed.error.issues });
+    }
+    if (parsed.data.checkOutDate <= parsed.data.checkInDate) {
+      return res.status(400).json({ message: "Check-out date must be after check-in date" });
+    }
+    const stay = await storage.createStay(parsed.data as InsertStay);
+    res.status(201).json(stay);
+  });
+
+  app.patch("/api/stays/:id", async (req, res) => {
+    const parsed = insertStaySchema.partial().safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Invalid stay data", errors: parsed.error.issues });
+    }
+    if (
+      parsed.data.checkInDate && parsed.data.checkOutDate &&
+      parsed.data.checkOutDate <= parsed.data.checkInDate
+    ) {
+      return res.status(400).json({ message: "Check-out date must be after check-in date" });
+    }
+    const stay = await storage.updateStay(Number(req.params.id), parsed.data as Partial<InsertStay>);
+    if (!stay) return res.status(404).json({ message: "Stay not found" });
+    res.json(stay);
+  });
+
+  app.delete("/api/stays/:id", async (req, res) => {
+    const ok = await storage.deleteStay(Number(req.params.id));
+    if (!ok) return res.status(404).json({ message: "Stay not found" });
     res.status(204).send();
   });
 

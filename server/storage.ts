@@ -1,6 +1,6 @@
 import {
   customers, contacts, properties, staff, jobTemplates, serviceChecklists,
-  schedules, jobs, invoices, invoiceItems, payments, notes, attachments, appSettings,
+  schedules, jobs, invoices, invoiceItems, payments, notes, attachments, appSettings, stays,
 } from "@shared/schema";
 import type {
   Customer, InsertCustomer,
@@ -17,6 +17,7 @@ import type {
   Note, InsertNote,
   Attachment, InsertAttachment,
   AppSettings, InsertAppSettings,
+  Stay, InsertStay,
 } from "@shared/schema";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
@@ -28,6 +29,13 @@ export interface JobFilter {
   dateTo?: string;
   propertyId?: number;
   jobType?: string;
+}
+
+export interface StayFilter {
+  propertyId?: number;
+  // Overlap filter: any stay whose range intersects [dateFrom, dateTo].
+  dateFrom?: string;
+  dateTo?: string;
 }
 
 // Thrown when a delete is blocked because dependent records still reference
@@ -115,6 +123,14 @@ export interface IStorage {
   createJob(data: InsertJob): Promise<Job>;
   updateJob(id: number, data: Partial<InsertJob>): Promise<Job | undefined>;
   deleteJob(id: number): Promise<boolean>;
+
+  // --- stays (guest bookings, Stays calendar) ---
+  getStays(filter?: StayFilter): Promise<Stay[]>;
+  getStay(id: number): Promise<Stay | undefined>;
+  getStaysByProperty(propertyId: number): Promise<Stay[]>;
+  createStay(data: InsertStay): Promise<Stay>;
+  updateStay(id: number, data: Partial<InsertStay>): Promise<Stay | undefined>;
+  deleteStay(id: number): Promise<boolean>;
 
   // --- invoices (scaffolded, Phase 3) ---
   getInvoices(): Promise<Invoice[]>;
@@ -370,6 +386,34 @@ export class DatabaseStorage implements IStorage {
     db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
     db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
     return db.delete(jobs).where(eq(jobs.id, id)).run().changes > 0;
+  }
+
+  // ---------------- stays ----------------
+  async getStays(filter?: StayFilter): Promise<Stay[]> {
+    const conditions: SQL[] = [];
+    if (filter?.propertyId !== undefined) conditions.push(eq(stays.propertyId, filter.propertyId));
+    // Range-overlap: a stay [checkIn, checkOut] intersects the requested
+    // window [dateFrom, dateTo] when checkIn <= dateTo AND checkOut >= dateFrom.
+    if (filter?.dateTo) conditions.push(lte(stays.checkInDate, filter.dateTo));
+    if (filter?.dateFrom) conditions.push(gte(stays.checkOutDate, filter.dateFrom));
+
+    if (conditions.length === 0) return db.select().from(stays).all();
+    return db.select().from(stays).where(and(...conditions)).all();
+  }
+  async getStay(id: number): Promise<Stay | undefined> {
+    return db.select().from(stays).where(eq(stays.id, id)).get();
+  }
+  async getStaysByProperty(propertyId: number): Promise<Stay[]> {
+    return db.select().from(stays).where(eq(stays.propertyId, propertyId)).all();
+  }
+  async createStay(data: InsertStay): Promise<Stay> {
+    return db.insert(stays).values(data).returning().get();
+  }
+  async updateStay(id: number, data: Partial<InsertStay>): Promise<Stay | undefined> {
+    return db.update(stays).set(data).where(eq(stays.id, id)).returning().get();
+  }
+  async deleteStay(id: number): Promise<boolean> {
+    return db.delete(stays).where(eq(stays.id, id)).run().changes > 0;
   }
 
   // ---------------- invoices ----------------

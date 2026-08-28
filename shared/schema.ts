@@ -218,6 +218,32 @@ export type InsertInvoice = typeof invoices.$inferInsert;
 export type Invoice = typeof invoices.$inferSelect;
 
 // ---------------------------------------------------------------------------
+// 9b. stays — guest bookings/reservations at a property (Airbnb/VRBO/direct
+// etc.). Distinct from `jobs`: a stay is when a guest occupies the property;
+// turnover-clean jobs get scheduled around a stay's check-out date. Rendered
+// on the Stays calendar as a multi-day bar spanning check-in \u2192 check-out.
+// ---------------------------------------------------------------------------
+export const stays = sqliteTable("stays", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  propertyId: integer("property_id").notNull().references(() => properties.id),
+  guestName: text("guest_name").notNull(),
+  guestPhone: text("guest_phone"),
+  guestCount: integer("guest_count"),
+  platform: text("platform", {
+    enum: ["airbnb", "vrbo", "booking_com", "direct", "other"],
+  }).notNull().default("airbnb"),
+  checkInDate: text("check_in_date").notNull(),
+  checkOutDate: text("check_out_date").notNull(),
+  status: text("status", { enum: ["confirmed", "tentative", "canceled"] }).notNull().default("confirmed"),
+  notes: text("notes"),
+  createdAt: text("created_at").notNull().default(new Date().toISOString()),
+});
+
+export const insertStaySchema = createInsertSchema(stays).omit({ id: true, createdAt: true });
+export type InsertStay = typeof stays.$inferInsert;
+export type Stay = typeof stays.$inferSelect;
+
+// ---------------------------------------------------------------------------
 // 10. invoice_items
 // ---------------------------------------------------------------------------
 export const invoiceItems = sqliteTable("invoice_items", {
