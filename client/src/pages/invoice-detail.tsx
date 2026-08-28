@@ -3,7 +3,7 @@ import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, Printer, DollarSign, Building2, Briefcase } from "lucide-react";
 import type { Invoice, Customer, InvoiceItem, Payment, AppSettings, Job } from "@shared/schema";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, apiUrl } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -103,7 +103,7 @@ export default function InvoiceDetailPage() {
           size="sm"
           variant="outline"
           className="gap-1.5"
-          onClick={() => window.open(`/api/invoices/${invoiceId}/print`, "_blank")}
+          onClick={() => window.open(apiUrl(`/api/invoices/${invoiceId}/print`), "_blank")}
           data-testid="button-print-invoice"
         >
           <Printer className="h-3.5 w-3.5" /> Print / Save PDF

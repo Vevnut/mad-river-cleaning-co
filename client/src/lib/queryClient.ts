@@ -2,6 +2,13 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 
+// Exported so call sites that build URLs outside of apiRequest/getQueryFn
+// (e.g. window.open for the printable invoice) still resolve through the
+// deployed proxy prefix instead of hitting the static host directly.
+export function apiUrl(path: string): string {
+  return `${API_BASE}${path}`;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
