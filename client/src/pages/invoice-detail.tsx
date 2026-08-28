@@ -211,7 +211,6 @@ export default function InvoiceDetailPage() {
             {invoice.discountAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span className="tabular-nums">-{formatMoney(invoice.discountAmount)}</span></div>}
             {invoice.travelFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Travel Fee</span><span className="tabular-nums">{formatMoney(invoice.travelFee)}</span></div>}
             {invoice.rushFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Rush Fee</span><span className="tabular-nums">{formatMoney(invoice.rushFee)}</span></div>}
-            {invoice.taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({(invoice.taxRate * 100).toFixed(2)}%)</span><span className="tabular-nums">{formatMoney(invoice.taxAmount)}</span></div>}
             <div className="flex justify-between pt-1.5 border-t font-semibold text-base"><span>Total</span><span className="tabular-nums" data-testid="text-invoice-total">{formatMoney(invoice.total)}</span></div>
             {invoice.amountPaid > 0 && <div className="flex justify-between text-status-paid"><span>Amount Paid</span><span className="tabular-nums">-{formatMoney(invoice.amountPaid)}</span></div>}
             {balance > 0 && <div className="flex justify-between font-semibold text-status-overdue"><span>Balance Due</span><span className="tabular-nums" data-testid="text-invoice-balance">{formatMoney(balance)}</span></div>}

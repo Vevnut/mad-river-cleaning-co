@@ -39,7 +39,7 @@ export default function InvoiceNewPage() {
   const [discountAmount, setDiscountAmount] = useState(0);
   const [travelFee, setTravelFee] = useState(0);
   const [rushFee, setRushFee] = useState(0);
-  const [taxRate, setTaxRate] = useState(0);
+  const taxRate = 0;
   const [notes, setNotes] = useState("");
   const [items, setItems] = useState<EditableLineItem[]>([
     { key: "seed-1", description: "Turnover clean base fee", itemType: "service", quantity: 1, unitPrice: 0 },
@@ -47,7 +47,6 @@ export default function InvoiceNewPage() {
 
   useEffect(() => {
     if (settings) {
-      setTaxRate(settings.defaultTaxRate);
       setDueDate(addDays(new Date().toISOString().slice(0, 10), settings.defaultPaymentTermsDays));
     }
   }, [settings]);
@@ -220,9 +219,9 @@ export default function InvoiceNewPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base">Fees, Discount &amp; Tax</CardTitle>
+              <CardTitle className="text-base">Fees &amp; Discount</CardTitle>
             </CardHeader>
-            <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3">
               <div>
                 <Label className="text-xs font-medium text-muted-foreground block mb-1">Discount ($)</Label>
                 <Input type="number" min={0} step="0.01" value={discountAmount} onChange={(e) => setDiscountAmount(Number(e.target.value))} data-testid="input-invoice-discount" />
@@ -234,17 +233,6 @@ export default function InvoiceNewPage() {
               <div>
                 <Label className="text-xs font-medium text-muted-foreground block mb-1">Rush Fee ($)</Label>
                 <Input type="number" min={0} step="0.01" value={rushFee} onChange={(e) => setRushFee(Number(e.target.value))} data-testid="input-invoice-rush-fee" />
-              </div>
-              <div>
-                <Label className="text-xs font-medium text-muted-foreground block mb-1">Tax Rate (%)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step="0.01"
-                  value={Math.round(taxRate * 10000) / 100}
-                  onChange={(e) => setTaxRate(Number(e.target.value) / 100)}
-                  data-testid="input-invoice-tax-rate"
-                />
               </div>
             </CardContent>
           </Card>
@@ -264,7 +252,6 @@ export default function InvoiceNewPage() {
               {discountAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span className="tabular-nums">-{formatMoney(discountAmount)}</span></div>}
               {travelFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Travel Fee</span><span className="tabular-nums">{formatMoney(travelFee)}</span></div>}
               {rushFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Rush Fee</span><span className="tabular-nums">{formatMoney(rushFee)}</span></div>}
-              {taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax</span><span className="tabular-nums">{formatMoney(taxAmount)}</span></div>}
               <div className="flex justify-between pt-1.5 border-t font-semibold text-base"><span>Total</span><span className="tabular-nums" data-testid="text-invoice-new-total">{formatMoney(total)}</span></div>
             </CardContent>
           </Card>

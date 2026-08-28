@@ -187,7 +187,6 @@ export function renderInvoicePrintHtml(opts: {
     ${invoice.discountAmount > 0 ? `<div class="totals-row"><span>Discount</span><span>-${fmt$(invoice.discountAmount)}</span></div>` : ""}
     ${invoice.travelFee > 0 ? `<div class="totals-row"><span>Travel Fee</span><span>${fmt$(invoice.travelFee)}</span></div>` : ""}
     ${invoice.rushFee > 0 ? `<div class="totals-row"><span>Rush Fee</span><span>${fmt$(invoice.rushFee)}</span></div>` : ""}
-    ${invoice.taxAmount > 0 ? `<div class="totals-row"><span>Tax (${(invoice.taxRate * 100).toFixed(2)}%)</span><span>${fmt$(invoice.taxAmount)}</span></div>` : ""}
     <div class="totals-row grand"><span>Total</span><span>${fmt$(invoice.total)}</span></div>
     ${invoice.amountPaid > 0 ? `<div class="totals-row"><span>Amount Paid</span><span>-${fmt$(invoice.amountPaid)}</span></div>` : ""}
     ${balance > 0 ? `<div class="totals-row balance"><span>Balance Due</span><span>${fmt$(balance)}</span></div>` : ""}

@@ -424,7 +424,8 @@ export async function registerRoutes(
       amount: round2(Number(it.quantity ?? 1) * Number(it.unitPrice ?? 0)),
     }));
     const discountAmount = Number(parsed.data.discountAmount ?? 0);
-    const taxRate = Number(parsed.data.taxRate ?? 0);
+    // NH has no sales tax — invoices never carry a tax line, regardless of client input.
+    const taxRate = 0;
     const travelFee = Number(parsed.data.travelFee ?? 0);
     const rushFee = Number(parsed.data.rushFee ?? 0);
     const { subtotal, taxAmount, total } = computeInvoiceTotals({
@@ -486,7 +487,7 @@ export async function registerRoutes(
     const items = [
       { description, itemType: "service" as const, quantity: 1, unitPrice: job.price, amount: round2(job.price) },
     ];
-    const taxRate = settings.defaultTaxRate;
+    const taxRate = 0; // NH has no sales tax
     const { subtotal, taxAmount, total } = computeInvoiceTotals({
       items, discountAmount: 0, taxRate, travelFee: 0, rushFee: 0,
     });

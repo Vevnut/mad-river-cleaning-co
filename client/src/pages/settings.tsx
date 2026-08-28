@@ -32,7 +32,6 @@ export default function SettingsPage() {
   const [businessEmail, setBusinessEmail] = useState("");
 
   // --- Invoice Settings form state ---
-  const [defaultTaxRate, setDefaultTaxRate] = useState(0);
   const [defaultPaymentTermsDays, setDefaultPaymentTermsDays] = useState(15);
   const [invoiceNumberPrefix, setInvoiceNumberPrefix] = useState("INV");
   const [invoiceFooterNote, setInvoiceFooterNote] = useState("");
@@ -49,7 +48,6 @@ export default function SettingsPage() {
       setBusinessAddress(settings.businessAddress);
       setBusinessPhone(settings.businessPhone);
       setBusinessEmail(settings.businessEmail);
-      setDefaultTaxRate(Math.round(settings.defaultTaxRate * 10000) / 100);
       setDefaultPaymentTermsDays(settings.defaultPaymentTermsDays);
       setInvoiceNumberPrefix(settings.invoiceNumberPrefix);
       setInvoiceFooterNote(settings.invoiceFooterNote);
@@ -176,15 +174,9 @@ export default function SettingsPage() {
                 <Skeleton className="h-40 w-full" />
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs font-medium text-muted-foreground block mb-1">Default Tax Rate (%)</Label>
-                      <Input type="number" min={0} step="0.01" value={defaultTaxRate} onChange={(e) => setDefaultTaxRate(Number(e.target.value))} data-testid="input-default-tax-rate" />
-                    </div>
-                    <div>
-                      <Label className="text-xs font-medium text-muted-foreground block mb-1">Payment Terms (days)</Label>
-                      <Input type="number" min={0} value={defaultPaymentTermsDays} onChange={(e) => setDefaultPaymentTermsDays(Number(e.target.value))} data-testid="input-payment-terms" />
-                    </div>
+                  <div>
+                    <Label className="text-xs font-medium text-muted-foreground block mb-1">Payment Terms (days)</Label>
+                    <Input type="number" min={0} value={defaultPaymentTermsDays} onChange={(e) => setDefaultPaymentTermsDays(Number(e.target.value))} data-testid="input-payment-terms" />
                   </div>
                   <div>
                     <Label className="text-xs font-medium text-muted-foreground block mb-1">Invoice Number Prefix</Label>
@@ -197,7 +189,7 @@ export default function SettingsPage() {
                   <Button
                     size="sm"
                     onClick={() => saveSettings.mutate({
-                      defaultTaxRate: defaultTaxRate / 100,
+                      defaultTaxRate: 0,
                       defaultPaymentTermsDays,
                       invoiceNumberPrefix,
                       invoiceFooterNote,
