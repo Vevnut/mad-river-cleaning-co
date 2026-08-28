@@ -16,7 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { CustomerFormDialog } from "@/components/customers/customer-form-dialog";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
@@ -34,6 +38,7 @@ export default function CustomersListPage() {
   const [editing, setEditing] = useState<Customer | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data: customers = [], isLoading } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
   const { data: properties = [] } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
@@ -163,48 +168,76 @@ export default function CustomersListPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((c) => (
-                <TableRow key={c.id} data-testid={`row-customer-${c.id}`}>
-                  <TableCell>
-                    <Link href={`/customers/${c.id}`} className="font-medium hover:underline" data-testid={`link-customer-${c.id}`}>
-                      {c.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{c.companyName ?? "—"}</TableCell>
-                  <TableCell className="tabular-nums">{c.phone}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.email}</TableCell>
-                  <TableCell>{c.billingCity}, {c.billingState}</TableCell>
-                  <TableCell className="text-right tabular-nums">{propertyCounts.get(c.id) ?? 0}</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="capitalize">{c.preferredContact}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon" variant="ghost" data-testid={`button-row-menu-${c.id}`}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          data-testid={`menuitem-edit-${c.id}`}
-                          onClick={() => {
-                            setEditing(c);
-                            setFormOpen(true);
-                          }}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          data-testid={`menuitem-delete-${c.id}`}
-                          className="text-destructive"
-                          onClick={() => setDeleteTarget(c)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
+                <ContextMenu key={c.id}>
+                  <ContextMenuTrigger asChild>
+                    <TableRow data-testid={`row-customer-${c.id}`}>
+                      <TableCell>
+                        <Link href={`/customers/${c.id}`} className="font-medium hover:underline" data-testid={`link-customer-${c.id}`}>
+                          {c.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{c.companyName ?? "—"}</TableCell>
+                      <TableCell className="tabular-nums">{c.phone}</TableCell>
+                      <TableCell className="text-muted-foreground">{c.email}</TableCell>
+                      <TableCell>{c.billingCity}, {c.billingState}</TableCell>
+                      <TableCell className="text-right tabular-nums">{propertyCounts.get(c.id) ?? 0}</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="capitalize">{c.preferredContact}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" data-testid={`button-row-menu-${c.id}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              data-testid={`menuitem-edit-${c.id}`}
+                              onClick={() => {
+                                setEditing(c);
+                                setFormOpen(true);
+                              }}
+                            >
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              data-testid={`menuitem-delete-${c.id}`}
+                              className="text-destructive"
+                              onClick={() => setDeleteTarget(c)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent data-testid={`contextmenu-customer-${c.id}`}>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-view-${c.id}`}
+                      onClick={() => navigate(`/customers/${c.id}`)}
+                    >
+                      View Customer
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-edit-${c.id}`}
+                      onClick={() => {
+                        setEditing(c);
+                        setFormOpen(true);
+                      }}
+                    >
+                      Edit
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-delete-${c.id}`}
+                      className="text-destructive"
+                      onClick={() => setDeleteTarget(c)}
+                    >
+                      Delete
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </TableBody>
           </Table>

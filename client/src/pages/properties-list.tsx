@@ -16,7 +16,11 @@ import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
+import { useLocation } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { formatMoney } from "@/lib/format";
@@ -32,6 +36,7 @@ export default function PropertiesListPage() {
   const [editing, setEditing] = useState<Property | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
   const { toast } = useToast();
+  const [, navigate] = useLocation();
 
   const { data: properties = [], isLoading } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
@@ -148,57 +153,85 @@ export default function PropertiesListPage() {
             </TableHeader>
             <TableBody>
               {filtered.map((p) => (
-                <TableRow key={p.id} data-testid={`row-property-${p.id}`}>
-                  <TableCell>
-                    <Link href={`/properties/${p.id}`} className="font-medium hover:underline" data-testid={`link-property-${p.id}`}>
-                      {p.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{customerName(p.customerId)}</TableCell>
-                  <TableCell className="text-muted-foreground">{p.city}, {p.state}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className="capitalize">{p.unitType}</Badge>
-                  </TableCell>
-                  <TableCell className="tabular-nums">{p.bedrooms}bd / {p.bathrooms}ba</TableCell>
-                  <TableCell>
-                    <Badge variant="secondary" className="capitalize">{p.cleaningFrequency}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">{formatMoney(p.basePrice)}</TableCell>
-                  <TableCell>
-                    {p.active ? (
-                      <Badge variant="outline" className="bg-status-completed-bg text-status-completed border-transparent">Active</Badge>
-                    ) : (
-                      <Badge variant="outline" className="bg-status-canceled-bg text-status-canceled border-transparent">Inactive</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button size="icon" variant="ghost" data-testid={`button-row-menu-${p.id}`}>
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          data-testid={`menuitem-edit-${p.id}`}
-                          onClick={() => {
-                            setEditing(p);
-                            setFormOpen(true);
-                          }}
-                        >
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          data-testid={`menuitem-delete-${p.id}`}
-                          className="text-destructive"
-                          onClick={() => setDeleteTarget(p)}
-                        >
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
+                <ContextMenu key={p.id}>
+                  <ContextMenuTrigger asChild>
+                    <TableRow data-testid={`row-property-${p.id}`}>
+                      <TableCell>
+                        <Link href={`/properties/${p.id}`} className="font-medium hover:underline" data-testid={`link-property-${p.id}`}>
+                          {p.name}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{customerName(p.customerId)}</TableCell>
+                      <TableCell className="text-muted-foreground">{p.city}, {p.state}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="capitalize">{p.unitType}</Badge>
+                      </TableCell>
+                      <TableCell className="tabular-nums">{p.bedrooms}bd / {p.bathrooms}ba</TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="capitalize">{p.cleaningFrequency}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">{formatMoney(p.basePrice)}</TableCell>
+                      <TableCell>
+                        {p.active ? (
+                          <Badge variant="outline" className="bg-status-completed-bg text-status-completed border-transparent">Active</Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-status-canceled-bg text-status-canceled border-transparent">Inactive</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="icon" variant="ghost" data-testid={`button-row-menu-${p.id}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              data-testid={`menuitem-edit-${p.id}`}
+                              onClick={() => {
+                                setEditing(p);
+                                setFormOpen(true);
+                              }}
+                            >
+                              Edit
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              data-testid={`menuitem-delete-${p.id}`}
+                              className="text-destructive"
+                              onClick={() => setDeleteTarget(p)}
+                            >
+                              Delete
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent data-testid={`contextmenu-property-${p.id}`}>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-view-${p.id}`}
+                      onClick={() => navigate(`/properties/${p.id}`)}
+                    >
+                      View Property
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-edit-${p.id}`}
+                      onClick={() => {
+                        setEditing(p);
+                        setFormOpen(true);
+                      }}
+                    >
+                      Edit
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      data-testid={`contextmenuitem-delete-${p.id}`}
+                      className="text-destructive"
+                      onClick={() => setDeleteTarget(p)}
+                    >
+                      Delete
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               ))}
             </TableBody>
           </Table>

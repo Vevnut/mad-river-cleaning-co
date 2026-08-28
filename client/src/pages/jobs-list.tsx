@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { Plus, Search, ClipboardList } from "lucide-react";
 import type { Job, Property, Staff } from "@shared/schema";
 import { Button } from "@/components/ui/button";
@@ -12,9 +12,18 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { JobFormDialog } from "@/components/jobs/job-form-dialog";
 import { formatMoney, formatDate } from "@/lib/format";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const JOB_STATUSES = ["scheduled", "in_progress", "completed", "invoiced", "canceled"] as const;
 const JOB_TYPES = ["turnover", "deep_clean", "inspection", "one_time", "recurring", "custom"] as const;
@@ -27,6 +36,9 @@ export default function JobsListPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [newJobOpen, setNewJobOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
 
   const { data: jobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: properties = [] } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
@@ -54,6 +66,19 @@ export default function JobsListPage() {
       .sort((a, b) => (a.scheduledDate + a.scheduledTime).localeCompare(b.scheduledDate + b.scheduledTime))
       .reverse();
   }, [jobs, statusFilter, jobTypeFilter, propertyFilter, dateFrom, dateTo, search, properties, staffList]);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await apiRequest("DELETE", `/api/jobs/${deleteTarget.id}`);
+      queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
+      toast({ title: "Job deleted" });
+    } catch (err) {
+      toast({ title: "Couldn't delete job", description: (err as Error).message, variant: "destructive" });
+    } finally {
+      setDeleteTarget(null);
+    }
+  };
 
   return (
     <div className="space-y-4 p-4 md:p-6">
@@ -160,26 +185,51 @@ export default function JobsListPage() {
                 const property = propertyById(job.propertyId);
                 const staff = staffById(job.assignedStaffId);
                 return (
-                  <TableRow key={job.id} data-testid={`row-job-${job.id}`}>
-                    <TableCell className="whitespace-nowrap">
-                      <Link href={`/jobs/${job.id}`} className="hover:underline">
-                        <span className="tabular-nums">{formatDate(job.scheduledDate)}</span>
-                        <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{job.scheduledTime}</span>
-                      </Link>
-                    </TableCell>
-                    <TableCell>
-                      <Link href={`/jobs/${job.id}`} className="hover:underline">
-                        <p className="font-medium truncate max-w-[200px]">{property?.name ?? `Property #${job.propertyId}`}</p>
-                        <p className="text-xs text-muted-foreground truncate max-w-[200px]">{property?.city ?? ""}</p>
-                      </Link>
-                    </TableCell>
-                    <TableCell className="hidden sm:table-cell capitalize">{job.jobType.replace("_", " ")}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={job.status} />
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">{staff ? staff.name : "Unassigned"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatMoney(job.price)}</TableCell>
-                  </TableRow>
+                  <ContextMenu key={job.id}>
+                    <ContextMenuTrigger asChild>
+                      <TableRow data-testid={`row-job-${job.id}`}>
+                        <TableCell className="whitespace-nowrap">
+                          <Link href={`/jobs/${job.id}`} className="hover:underline">
+                            <span className="tabular-nums">{formatDate(job.scheduledDate)}</span>
+                            <span className="ml-1.5 text-xs text-muted-foreground tabular-nums">{job.scheduledTime}</span>
+                          </Link>
+                        </TableCell>
+                        <TableCell>
+                          <Link href={`/jobs/${job.id}`} className="hover:underline">
+                            <p className="font-medium truncate max-w-[200px]">{property?.name ?? `Property #${job.propertyId}`}</p>
+                            <p className="text-xs text-muted-foreground truncate max-w-[200px]">{property?.city ?? ""}</p>
+                          </Link>
+                        </TableCell>
+                        <TableCell className="hidden sm:table-cell capitalize">{job.jobType.replace("_", " ")}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={job.status} />
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">{staff ? staff.name : "Unassigned"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMoney(job.price)}</TableCell>
+                      </TableRow>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent data-testid={`contextmenu-job-${job.id}`}>
+                      <ContextMenuItem
+                        data-testid={`contextmenuitem-open-${job.id}`}
+                        onClick={() => navigate(`/jobs/${job.id}`)}
+                      >
+                        Open Job
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        data-testid={`contextmenuitem-edit-${job.id}`}
+                        onClick={() => navigate(`/jobs/${job.id}`)}
+                      >
+                        Edit
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        data-testid={`contextmenuitem-delete-${job.id}`}
+                        className="text-destructive"
+                        onClick={() => setDeleteTarget(job)}
+                      >
+                        Delete
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 );
               })}
             </TableBody>
@@ -188,6 +238,23 @@ export default function JobsListPage() {
       )}
 
       <JobFormDialog open={newJobOpen} onOpenChange={setNewJobOpen} />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete job?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove this job and its checklist. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete-job">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} data-testid="button-confirm-delete-job">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
