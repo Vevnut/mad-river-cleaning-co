@@ -30,6 +30,20 @@ export interface JobFilter {
   jobType?: string;
 }
 
+// Thrown when a delete is blocked because dependent records still reference
+// the target row (e.g. a customer that still has properties/jobs/invoices).
+// The Express error middleware in server/index.ts reads `.status` and
+// `.message` off any thrown error, so this surfaces as a clean 409 with a
+// human-readable explanation instead of a raw SQLITE_CONSTRAINT_FOREIGNKEY
+// 500.
+export class DeleteConflictError extends Error {
+  status = 409;
+  constructor(message: string) {
+    super(message);
+    this.name = "DeleteConflictError";
+  }
+}
+
 const sqlite = new Database("data.db");
 sqlite.pragma("journal_mode = WAL");
 
@@ -146,6 +160,25 @@ export class DatabaseStorage implements IStorage {
     return db.update(customers).set(data).where(eq(customers.id, id)).returning().get();
   }
   async deleteCustomer(id: number): Promise<boolean> {
+    const [propertyCount, jobCount, invoiceCount] = [
+      db.select().from(properties).where(eq(properties.customerId, id)).all().length,
+      db.select().from(jobs).where(eq(jobs.customerId, id)).all().length,
+      db.select().from(invoices).where(eq(invoices.customerId, id)).all().length,
+    ];
+    if (propertyCount > 0 || jobCount > 0 || invoiceCount > 0) {
+      const parts = [
+        propertyCount > 0 ? `${propertyCount} propert${propertyCount === 1 ? "y" : "ies"}` : null,
+        jobCount > 0 ? `${jobCount} job${jobCount === 1 ? "" : "s"}` : null,
+        invoiceCount > 0 ? `${invoiceCount} invoice${invoiceCount === 1 ? "" : "s"}` : null,
+      ].filter(Boolean);
+      throw new DeleteConflictError(
+        `Can't delete this customer — they still have ${parts.join(", ")}. Delete or reassign those first.`,
+      );
+    }
+    // Contacts and notes are exclusively owned by the customer, so they're
+    // safe to clear out automatically.
+    db.delete(contacts).where(eq(contacts.customerId, id)).run();
+    db.delete(notes).where(eq(notes.customerId, id)).run();
     return db.delete(customers).where(eq(customers.id, id)).run().changes > 0;
   }
 
@@ -183,6 +216,18 @@ export class DatabaseStorage implements IStorage {
     return db.update(properties).set(data).where(eq(properties.id, id)).returning().get();
   }
   async deleteProperty(id: number): Promise<boolean> {
+    const jobCount = db.select().from(jobs).where(eq(jobs.propertyId, id)).all().length;
+    const scheduleCount = db.select().from(schedules).where(eq(schedules.propertyId, id)).all().length;
+    if (jobCount > 0 || scheduleCount > 0) {
+      const parts = [
+        jobCount > 0 ? `${jobCount} job${jobCount === 1 ? "" : "s"}` : null,
+        scheduleCount > 0 ? `${scheduleCount} recurring schedule${scheduleCount === 1 ? "" : "s"}` : null,
+      ].filter(Boolean);
+      throw new DeleteConflictError(
+        `Can't delete this property — it still has ${parts.join(", ")}. Delete or reassign those first.`,
+      );
+    }
+    db.delete(notes).where(eq(notes.propertyId, id)).run();
     return db.delete(properties).where(eq(properties.id, id)).run().changes > 0;
   }
 
@@ -226,6 +271,12 @@ export class DatabaseStorage implements IStorage {
     return db.update(staff).set(data).where(eq(staff.id, id)).returning().get();
   }
   async deleteStaff(id: number): Promise<boolean> {
+    // Staff assignments are nullable everywhere they're referenced, so a
+    // departing staff member shouldn't be blocked by their job history —
+    // unassign them instead of deleting or blocking.
+    db.update(jobs).set({ assignedStaffId: null }).where(eq(jobs.assignedStaffId, id)).run();
+    db.update(schedules).set({ assignedStaffId: null }).where(eq(schedules.assignedStaffId, id)).run();
+    db.update(notes).set({ authorStaffId: null }).where(eq(notes.authorStaffId, id)).run();
     return db.delete(staff).where(eq(staff.id, id)).run().changes > 0;
   }
 
@@ -243,6 +294,8 @@ export class DatabaseStorage implements IStorage {
     return db.update(jobTemplates).set(data).where(eq(jobTemplates.id, id)).returning().get();
   }
   async deleteJobTemplate(id: number): Promise<boolean> {
+    db.update(jobs).set({ jobTemplateId: null }).where(eq(jobs.jobTemplateId, id)).run();
+    db.update(schedules).set({ jobTemplateId: null }).where(eq(schedules.jobTemplateId, id)).run();
     return db.delete(jobTemplates).where(eq(jobTemplates.id, id)).run().changes > 0;
   }
 
@@ -277,6 +330,7 @@ export class DatabaseStorage implements IStorage {
     return db.update(schedules).set(data).where(eq(schedules.id, id)).returning().get();
   }
   async deleteSchedule(id: number): Promise<boolean> {
+    db.update(jobs).set({ scheduleId: null }).where(eq(jobs.scheduleId, id)).run();
     return db.delete(schedules).where(eq(schedules.id, id)).run().changes > 0;
   }
 
@@ -308,6 +362,13 @@ export class DatabaseStorage implements IStorage {
     return db.update(jobs).set(data).where(eq(jobs.id, id)).returning().get();
   }
   async deleteJob(id: number): Promise<boolean> {
+    // Checklist items only ever exist to serve their job, so they cascade.
+    // Invoices/notes are independent records — unlink rather than delete or
+    // block, so a job's billing/history isn't lost when the job itself is
+    // removed.
+    db.delete(serviceChecklists).where(eq(serviceChecklists.jobId, id)).run();
+    db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
+    db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
     return db.delete(jobs).where(eq(jobs.id, id)).run().changes > 0;
   }
 
@@ -328,6 +389,10 @@ export class DatabaseStorage implements IStorage {
     return db.update(invoices).set(data).where(eq(invoices.id, id)).returning().get();
   }
   async deleteInvoice(id: number): Promise<boolean> {
+    // Line items and payments only ever exist to serve their invoice, so
+    // they cascade automatically.
+    db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id)).run();
+    db.delete(payments).where(eq(payments.invoiceId, id)).run();
     return db.delete(invoices).where(eq(invoices.id, id)).run().changes > 0;
   }
 

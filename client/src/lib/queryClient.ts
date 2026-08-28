@@ -5,7 +5,19 @@ const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    // API errors are JSON `{ message: string }` — surface just the clean
+    // message when present instead of the raw "status: {...}" payload, so
+    // toasts read naturally (e.g. "Can't delete this customer — ...").
+    let cleanMessage: string | null = null;
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed && typeof parsed.message === "string") {
+        cleanMessage = parsed.message;
+      }
+    } catch {
+      // not JSON, fall through to the raw format below
+    }
+    throw new Error(cleanMessage ?? `${res.status}: ${text}`);
   }
 }
 

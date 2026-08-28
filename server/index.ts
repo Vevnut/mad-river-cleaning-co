@@ -65,8 +65,16 @@ app.use((req, res, next) => {
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    let status = err.status || err.statusCode || 500;
+    let message = err.message || "Internal Server Error";
+
+    // Safety net: any raw SQLite foreign-key violation that slips through
+    // (i.e. wasn't already turned into a DeleteConflictError upstream) gets
+    // a friendly 409 instead of a generic 500.
+    if (err.code === "SQLITE_CONSTRAINT_FOREIGNKEY" || err.code === "SQLITE_CONSTRAINT") {
+      status = 409;
+      message = "This item is still linked to other records, so it can't be deleted. Remove or reassign those first.";
+    }
 
     console.error("Internal Server Error:", err);
 
