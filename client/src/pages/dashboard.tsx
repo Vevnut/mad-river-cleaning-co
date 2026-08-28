@@ -123,6 +123,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           value={kpis.todaysJobsCount}
           loading={isLoading}
           testId="today-jobs"
+          to="/jobs"
         />
         <KpiCard
           icon={CalendarClock}
@@ -130,6 +131,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           value={kpis.upcomingCount}
           loading={isLoading}
           testId="upcoming-jobs"
+          to="/scheduling"
         />
         <KpiCard
           icon={CircleAlert}
@@ -139,6 +141,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           loading={isLoading}
           tone="overdue"
           testId="overdue-invoices"
+          to="/invoices"
         />
         <KpiCard
           icon={DollarSign}
@@ -147,6 +150,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           delta={kpis.revenueDelta}
           loading={isLoading}
           testId="monthly-revenue"
+          to="/reports"
         />
         <KpiCard
           icon={Users}
@@ -154,12 +158,18 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           value={kpis.activeCustomers}
           loading={isLoading}
           testId="active-customers"
+          to="/customers"
         />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Today's Jobs */}
-        <Card>
+        <Card
+          className="cursor-pointer hover-elevate"
+          onDoubleClick={() => navigate("/jobs")}
+          title="Double-click to view all jobs"
+          data-testid="card-dashboard-today-jobs"
+        >
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Today&rsquo;s Jobs</CardTitle>
           </CardHeader>
@@ -207,7 +217,12 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
         </Card>
 
         {/* Recent Customers */}
-        <Card>
+        <Card
+          className="cursor-pointer hover-elevate"
+          onDoubleClick={() => navigate("/customers")}
+          title="Double-click to view all customers"
+          data-testid="card-dashboard-recent-customers"
+        >
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Recent Customers</CardTitle>
           </CardHeader>
@@ -247,7 +262,12 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       </div>
 
       {/* Overdue invoices table */}
-      <Card>
+      <Card
+        className="cursor-pointer hover-elevate"
+        onDoubleClick={() => navigate("/invoices")}
+        title="Double-click to view all invoices"
+        data-testid="card-dashboard-overdue-invoices"
+      >
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Overdue Invoices</CardTitle>
         </CardHeader>
@@ -300,7 +320,12 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       </Card>
 
       {/* Revenue trend */}
-      <Card>
+      <Card
+        className="cursor-pointer hover-elevate"
+        onDoubleClick={() => navigate("/reports")}
+        title="Double-click to view reports"
+        data-testid="card-dashboard-revenue-trend"
+      >
         <CardHeader className="pb-3">
           <CardTitle className="text-base">Revenue by Month</CardTitle>
         </CardHeader>
@@ -344,6 +369,7 @@ function KpiCard({
   loading,
   tone,
   testId,
+  to,
 }: {
   icon: typeof CalendarCheck;
   label: string;
@@ -353,9 +379,16 @@ function KpiCard({
   loading?: boolean;
   tone?: "overdue";
   testId: string;
+  to?: string;
 }) {
+  const [, navigate] = useLocation();
   return (
-    <Card data-testid={`card-kpi-${testId}`}>
+    <Card
+      data-testid={`card-kpi-${testId}`}
+      className={to ? "cursor-pointer hover-elevate" : undefined}
+      onDoubleClick={to ? () => navigate(to) : undefined}
+      title={to ? "Double-click to view details" : undefined}
+    >
       <CardContent className="p-4">
         <div className="flex items-center justify-between">
           <p className="text-xs font-medium text-muted-foreground">{label}</p>

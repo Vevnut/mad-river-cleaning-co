@@ -7,7 +7,7 @@
 export function MadRiverMark({ className }: { className?: string }) {
   return (
     <img
-      src="/logo.png"
+      src={`${import.meta.env.BASE_URL}logo.png`}
       alt="Mad River Cleaning Co."
       className={className ?? "h-6 w-6 shrink-0 rounded-full object-cover"}
     />
