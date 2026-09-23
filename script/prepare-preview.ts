@@ -1,11 +1,11 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, createHash } from "node:crypto";
 import { existsSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 // Local bootstrap helper only. Refuses to overwrite server configuration.
 if (existsSync(".env")) throw new Error("Server configuration already exists; refusing to replace it.");
 const token = randomBytes(32).toString("hex");
-writeFileSync(".env", `DATABASE_PATH=data.db\nAUTH_SETUP_TOKEN=${token}\n`, { mode: 0o600, flag: "wx" });
+writeFileSync(".env", `DATABASE_PATH=data.db\nAUTH_SETUP_TOKEN_HASH=${createHash("sha256").update(token).digest("hex")}\n`, { mode: 0o600, flag: "wx" });
 const guide = `# Mad River Cleaning Co. Private First-Time Setup
 
 Keep this file private. It contains the one-time setup code for the updated preview, not a password or a payment-provider key.

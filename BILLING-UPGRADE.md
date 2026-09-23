@@ -82,7 +82,7 @@ The upgrade uses additive, transactional SQLite migrations in `server/migrations
 
 The invoice balance is calculated from total minus payments received rather than introducing a second independent balance field. Existing invoice totals and line items are not recalculated during migration.
 
-Before the first billing migration, startup creates a SQLite backup in the database's adjacent `backups/` directory. The second migration adds persisted send-review data so an uncertain email attempt can be recovered after refresh.
+Before the first billing migration, startup creates a SQLite backup in the database's adjacent `backups/` directory. The second migration adds persisted send-review data so an uncertain email attempt can be recovered after refresh, and the third adds persistent login-attempt throttling.
 
 ### Preservation verified
 
@@ -100,6 +100,7 @@ The application uses server environment variables, with an example in `.env.exam
 |---|---|
 | `DATABASE_PATH` | SQLite database path; defaults to `data.db`. Retain the existing live database path during deployment. |
 | `AUTH_SETUP_TOKEN` | Long random first-account bootstrap token. A private preview token was generated; setup is disabled after an account exists. |
+| `AUTH_SETUP_TOKEN_HASH` | Alternative SHA-256 digest of a random 256-bit setup code. Packaged deployments use this instead of including the actual code. |
 | `STRIPE_SECRET_KEY` | Server-side Stripe test or live secret key. |
 | `STRIPE_WEBHOOK_SECRET` | Signing secret for this deployment's webhook endpoint. |
 | `RESEND_API_KEY` | Server-side invoice email sending key. |
@@ -163,7 +164,7 @@ The old role selector had no server-side authorization. It has been replaced wit
 
 ## Test results and acceptance checklist
 
-**37 automated checks passed:** 25 API/migration checks and 12 provider/authentication checks. Provider calls were mocked, while Stripe's actual signature-verification library was exercised with signed synthetic events.
+**39 automated checks passed:** 25 API/migration checks and 14 provider/authentication checks. Provider calls were mocked, while Stripe's actual signature-verification library was exercised with signed synthetic events.
 
 Browser testing covered standard and owner invoices, job completion to invoice, catalog management, property overrides, hot-tub replacement, saved price changes/removals, Venmo partial payment, send review, print preview, and an unauthenticated customer invoice view. Key mobile screens were checked at 375 px and desktop at 1440 px, with no JavaScript page errors during these flows.
 

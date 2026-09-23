@@ -88,4 +88,10 @@ export function migrate(sql: Database.Database) {
       sql.prepare("INSERT INTO schema_migrations VALUES (2,?)").run(new Date().toISOString());
     })();
   }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=3").get()) {
+    sql.transaction(() => {
+      sql.exec("CREATE TABLE auth_rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, resets_at INTEGER NOT NULL)");
+      sql.prepare("INSERT INTO schema_migrations VALUES (3,?)").run(new Date().toISOString());
+    })();
+  }
 }

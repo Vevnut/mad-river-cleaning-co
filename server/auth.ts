@@ -8,26 +8,30 @@ const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const passwordHash = (password: string, salt = randomBytes(16).toString("hex")) =>
   `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
-const attempts = new Map<string, { count: number; reset: number }>();
+const limitAttempt = sqlite.transaction((key: string) => {
+  const time = Date.now();
+  sqlite.prepare("DELETE FROM auth_rate_limits WHERE resets_at<?").run(time);
+  sqlite.prepare(`INSERT INTO auth_rate_limits VALUES (?,1,?)
+    ON CONFLICT(key) DO UPDATE SET count=count+1`).run(key, time + 900000);
+  return (sqlite.prepare("SELECT count FROM auth_rate_limits WHERE key=?").get(key) as any).count <= 20;
+});
 
 export function registerAuth(app: Express) {
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   app.get("/api/auth/status", (_req, res) => res.json({
     setupRequired: !(sqlite.prepare("SELECT 1 FROM auth_users LIMIT 1").get()),
-    setupAvailable: Boolean(process.env.AUTH_SETUP_TOKEN),
+    setupAvailable: Boolean(process.env.AUTH_SETUP_TOKEN_HASH || process.env.AUTH_SETUP_TOKEN),
   }));
   app.post("/api/auth/:action", (req, res) => {
-    const key = req.ip || "unknown";
-    const entry = attempts.get(key) || { count: 0, reset: Date.now() + 900000 };
-    if (Date.now() > entry.reset) { entry.count = 0; entry.reset = Date.now() + 900000; }
-    if (++entry.count > 20) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
-    attempts.set(key, entry);
+    const key = hash(req.ip || "unknown");
+    if (!limitAttempt(key)) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
     const parsed = credentials.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Enter a valid email and a password of 12–128 characters." });
     const { email, password } = parsed.data;
     if (req.params.action === "setup") {
-      const expected = process.env.AUTH_SETUP_TOKEN;
-      if (!expected || hash(String(req.body.setupToken || "")) !== hash(expected))
+      const expected = process.env.AUTH_SETUP_TOKEN_HASH || (process.env.AUTH_SETUP_TOKEN ? hash(process.env.AUTH_SETUP_TOKEN) : "");
+      const provided = hash(String(req.body.setupToken || ""));
+      if (!/^[a-f0-9]{64}$/.test(expected) || !timingSafeEqual(Buffer.from(provided, "hex"), Buffer.from(expected, "hex")))
         return res.status(403).json({ message: "A valid server setup token is required." });
       if (sqlite.prepare("SELECT 1 FROM auth_users LIMIT 1").get())
         return res.status(409).json({ message: "Setup is already complete. Sign in instead." });
@@ -41,7 +45,7 @@ export function registerAuth(app: Express) {
     const token = randomBytes(32).toString("hex");
     sqlite.prepare("DELETE FROM auth_sessions WHERE expires_at<?").run(Date.now());
     sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, Date.now() + 12 * 3600000);
-    attempts.delete(key);
+    sqlite.prepare("DELETE FROM auth_rate_limits WHERE key=?").run(key);
     res.json({ token, email, organizationId });
   });
   // Dedicated organization database: every private route belongs to its immutable

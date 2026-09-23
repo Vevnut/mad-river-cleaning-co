@@ -6,6 +6,7 @@ import Stripe from "stripe";
 import Database from "better-sqlite3";
 process.env.DATABASE_PATH = "tests/.data/providers.db";
 process.env.AUTH_SETUP_TOKEN = "test-provider-setup";
+process.env.AUTH_SETUP_TOKEN_HASH = createHash("sha256").update(process.env.AUTH_SETUP_TOKEN).digest("hex");
 process.env.STRIPE_SECRET_KEY = "sk_test_NOT_A_REAL_KEY";
 process.env.STRIPE_WEBHOOK_SECRET = "whsec_offline_test";
 process.env.RESEND_API_KEY = "offline_test";
@@ -52,7 +53,9 @@ billingProviders.stripeClient = () => ({
 }) as any;
 let lastEmail: any;
 billingProviders.sendEmail = async (payload: string) => { sends++; lastEmail = JSON.parse(payload); return new Response(JSON.stringify({ id: "email_offline_test" }), { status: 200 }); };
+await api("POST", "/api/auth/setup", { email: "provider@example.test", password: "Offline-test-password", setupToken: "wrong-code" }, 403, false);
 token = (await api("POST", "/api/auth/setup", { email: "provider@example.test", password: "Offline-test-password", setupToken: "test-provider-setup" }, 200, false)).token;
+check("first-account setup accepts only the configured bootstrap digest");
 const p = (await api("GET", "/api/properties"))[0];
 const create = () => api("POST", "/api/invoices", { customerId: p.customerId, propertyId: p.id, issueDate: "2026-09-22", dueDate: "2026-10-07", rateType: "standard", requestKey: randomUUID() }, 201);
 const inv = await create();
@@ -114,5 +117,10 @@ db.pragma("foreign_keys=OFF"); db.prepare("UPDATE auth_users SET organization_id
 await api("GET", "/api/customers", undefined, 401);
 await api("GET", `/api/invoices/${inv.id}`, undefined, 401);
 check("foreign-organization session cannot read workspace records");
+for (let n = 0; n < 20; n++) await api("POST", "/api/auth/login", { email: "invalid" }, 400, false);
+await api("POST", "/api/auth/login", { email: "invalid" }, 429, false);
+check("failed-login throttling persists in the database", () => {
+  assert.equal(db.prepare("SELECT MAX(count) n FROM auth_rate_limits").get().n, 21);
+});
 console.log(`\n${count} offline provider/auth checks passed. Stripe signature library is real; all Checkout/email provider calls are mocked. No live transactions or email.`);
 await new Promise<void>(r => server.close(() => r())); db.close();
