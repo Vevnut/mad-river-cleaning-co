@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -26,9 +26,14 @@ export function RecordPaymentDialog({
   const { toast } = useToast();
   const balance = Math.max(0, invoice.total - invoice.amountPaid);
   const [amount, setAmount] = useState(String(balance.toFixed(2)));
-  const [method, setMethod] = useState<"card" | "cash" | "check" | "ach" | "other">("card");
+  const [method, setMethod] = useState("cash");
   const [paidDate, setPaidDate] = useState(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState("");
+  const [note, setNote] = useState("");
+  const requestKey = useRef(crypto.randomUUID());
+  useEffect(() => {
+    if (open) { setAmount(balance.toFixed(2)); setReference(""); setNote(""); requestKey.current = crypto.randomUUID(); }
+  }, [open, invoice.id]);
 
   const recordPayment = useMutation({
     mutationFn: async () => {
@@ -38,6 +43,7 @@ export function RecordPaymentDialog({
         method,
         paidDate,
         reference: reference || null,
+        note, requestKey: requestKey.current,
       });
       return res.json();
     },
@@ -81,10 +87,13 @@ export function RecordPaymentDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="card">Card</SelectItem>
+                <SelectItem value="manual_card">Card processed manually</SelectItem>
                 <SelectItem value="cash">Cash</SelectItem>
                 <SelectItem value="check">Check</SelectItem>
                 <SelectItem value="ach">ACH</SelectItem>
+                <SelectItem value="venmo">Venmo</SelectItem>
+                <SelectItem value="zelle">Zelle</SelectItem>
+                <SelectItem value="bank_transfer">Bank transfer</SelectItem>
                 <SelectItem value="other">Other</SelectItem>
               </SelectContent>
             </Select>
@@ -110,11 +119,12 @@ export function RecordPaymentDialog({
             />
           </div>
         </div>
+        <Label htmlFor="payment-note">Internal note</Label><Input id="payment-note" value={note} onChange={e => setNote(e.target.value)} />
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-payment">Cancel</Button>
           <Button
             onClick={() => recordPayment.mutate()}
-            disabled={recordPayment.isPending || !amount || Number(amount) <= 0}
+            disabled={recordPayment.isPending || !amount || Number(amount) <= 0 || Number(amount) > balance}
             data-testid="button-submit-payment"
           >
             Record Payment

@@ -17,6 +17,7 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
 import { formatMoney, formatDate } from "@/lib/format";
+import { ServiceSettings, PropertyInvoices } from "@/components/service-settings";
 
 export default function PropertyDetailPage() {
   const params = useParams<{ id: string }>();
@@ -81,6 +82,7 @@ export default function PropertyDetailPage() {
           {property.name}
         </h1>
         <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/invoices/new?propertyId=${propertyId}`}><Button size="sm">Create invoice</Button></Link>
           <Badge variant="outline" className="capitalize">{property.unitType}</Badge>
           {property.active ? (
             <Badge variant="outline" className="bg-status-completed-bg text-status-completed border-transparent">Active</Badge>
@@ -131,7 +133,7 @@ export default function PropertyDetailPage() {
             </div>
             <div className="flex items-center gap-2">
               <Bath className="h-4 w-4 text-muted-foreground" />
-              <span className="tabular-nums">{property.bathrooms} bathrooms</span>
+              <span className="tabular-nums">{property.fullBathrooms == null ? `${property.bathrooms} bathrooms (legacy)` : `${property.fullBathrooms} full baths, ${property.halfBathrooms} half baths`}</span>
             </div>
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-muted-foreground" />
@@ -143,7 +145,7 @@ export default function PropertyDetailPage() {
             </div>
             <div className="flex items-center gap-2 col-span-2">
               <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <span className="tabular-nums">{formatMoney(property.basePrice)} base</span>
+              <span className="tabular-nums">{property.standardDepartureRate == null ? "No default rate" : `${formatMoney(property.standardDepartureRate)} standard`}</span>
               <Badge variant="secondary" className="capitalize ml-1">{property.cleaningFrequency}</Badge>
             </div>
           </CardContent>
@@ -151,6 +153,13 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* Sensitive entry instructions — visually flagged */}
+      <Card><CardHeader className="flex-row items-center justify-between gap-3"><CardTitle className="text-base">Rates</CardTitle><Button size="sm" variant="outline" onClick={() => setEditOpen(true)}>Edit rates</Button></CardHeader><CardContent className="grid sm:grid-cols-2 gap-4 text-sm">
+        <div><p className="text-muted-foreground">Standard departure rate</p><p className="font-semibold text-xl mt-1">{property.standardDepartureRate == null ? "Not set" : formatMoney(property.standardDepartureRate)}</p><p>{property.standardDepartureRateName}</p></div>
+        <div><p className="text-muted-foreground">Owner rate</p><p className="font-semibold text-xl mt-1">{property.ownerRate == null ? "Not set" : formatMoney(property.ownerRate)}</p><p>{property.ownerRateName}</p></div>
+        {property.invoiceNotes && <p className="sm:col-span-2 text-muted-foreground whitespace-pre-wrap">Default invoice notes: {property.invoiceNotes}</p>}
+      </CardContent></Card>
+      <ServiceSettings propertyId={propertyId} />
+      <PropertyInvoices propertyId={propertyId} />
       <Card className="border-status-partial/40 bg-status-partial-bg/30">
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">

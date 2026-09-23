@@ -59,6 +59,7 @@ export type PrintItem = {
   quantity: number;
   unitPrice: number;
   amount: number;
+  descriptionSnapshot?: string | null;
 };
 
 export type PrintBusiness = {
@@ -110,7 +111,7 @@ export function renderInvoicePrintHtml(opts: {
   const itemRows = items
     .map(
       (it) => `<tr>
-        <td>${esc(it.description)} <span class="muted">(${esc(it.itemType)})</span></td>
+        <td>${esc(it.description)}${it.descriptionSnapshot ? `<br><span class="muted">${esc(it.descriptionSnapshot)}</span>` : ""}</td>
         <td class="right">${it.quantity}</td>
         <td class="right">${fmt$(it.unitPrice)}</td>
         <td class="right">${fmt$(it.amount)}</td>
@@ -120,6 +121,7 @@ export function renderInvoicePrintHtml(opts: {
 
   return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer">
 <title>${esc(invoice.invoiceNumber)} — ${esc(business.businessName)}</title>
 <style>
   * { box-sizing: border-box; }
@@ -146,6 +148,8 @@ export function renderInvoicePrintHtml(opts: {
   .totals-row.balance { font-weight: bold; color: #b3123b; }
   .notes-block { margin-top: 24px; font-size: 12px; color: #444; background: #f7f8fa; border: 1px solid #e2e5e9; border-radius: 6px; padding: 12px 14px; white-space: pre-wrap; }
   .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #d8dce1; text-align: center; font-size: 10.5px; color: #777; }
+  @media(max-width:500px) { .page {padding:20px 12px} .brand-name{font-size:18px} .doc-meta .inv-num{font-size:16px} .header{gap:12px} .totals{max-width:100%} }
+  @media print { .page{max-width:none} thead{display:table-header-group} tr{break-inside:avoid} .notes-block{break-inside:avoid} }
 </style>
 </head>
 <body><div class="page">

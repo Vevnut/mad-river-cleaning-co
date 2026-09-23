@@ -26,6 +26,8 @@ import InvoiceDetailPage from "@/pages/invoice-detail";
 import InvoiceNewPage from "@/pages/invoice-new";
 import ReportsPage from "@/pages/reports";
 import SettingsPage from "@/pages/settings";
+import { AuthGate } from "@/components/auth-gate";
+import PublicInvoicePage from "@/pages/public-invoice";
 
 function AppRouter({
   onNewCustomer,
@@ -48,6 +50,7 @@ function AppRouter({
       <Route path="/jobs" component={JobsListPage} />
       <Route path="/jobs/:id" component={JobDetailPage} />
       <Route path="/invoices/new" component={InvoiceNewPage} />
+      <Route path="/invoices/:id/edit" component={InvoiceNewPage} />
       <Route path="/invoices/:id" component={InvoiceDetailPage} />
       <Route path="/invoices" component={InvoicesListPage} />
       <Route path="/reports" component={ReportsPage} />
@@ -71,6 +74,9 @@ function App() {
       <ThemeProvider>
         <TooltipProvider>
           <Router hook={useHashLocation}>
+            <Switch>
+              <Route path="/pay/:token" component={PublicInvoicePage} />
+              <Route><AuthGate>
             <SidebarProvider style={style as React.CSSProperties}>
               <div className="flex h-screen w-full overflow-hidden">
                 <AppSidebar />
@@ -88,10 +94,12 @@ function App() {
                 </div>
               </div>
             </SidebarProvider>
+            <CustomerFormDialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen} />
+            <PropertyFormDialog open={newPropertyOpen} onOpenChange={setNewPropertyOpen} />
+            </AuthGate></Route>
+            </Switch>
           </Router>
           <Toaster />
-          <CustomerFormDialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen} />
-          <PropertyFormDialog open={newPropertyOpen} onOpenChange={setNewPropertyOpen} />
         </TooltipProvider>
       </ThemeProvider>
     </QueryClientProvider>

@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { businessDate } from "@/lib/format";
 import type { InsertJob } from "@shared/schema";
 import type { Property, JobTemplate, Staff, Job } from "@shared/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -16,6 +17,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { Choice, Field, rateOptions } from "@/components/billing-fields";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -32,6 +34,7 @@ const formSchema = z.object({
   durationMinutes: z.coerce.number().min(15, "Duration must be at least 15 minutes"),
   assignedStaffId: z.coerce.number().nullable().optional(),
   price: z.coerce.number().min(0, "Price must be 0 or more"),
+  rateType: z.enum(["standard", "owner", "custom"]).default("standard"),
   internalNotes: z.string().nullable().optional(),
   customerNotes: z.string().nullable().optional(),
   isRecurring: z.boolean().default(false),
@@ -44,11 +47,12 @@ const DEFAULTS: FormValues = {
   propertyId: 0,
   jobType: "turnover",
   jobTemplateId: null,
-  scheduledDate: new Date().toISOString().slice(0, 10),
+  scheduledDate: businessDate(),
   scheduledTime: "11:00",
   durationMinutes: 120,
   assignedStaffId: null,
   price: 0,
+  rateType: "standard",
   internalNotes: "",
   customerNotes: "",
   isRecurring: false,
@@ -109,6 +113,12 @@ export function JobFormDialog({
     [properties, selectedPropertyId]
   );
   const isRecurring = form.watch("isRecurring");
+  const selectedRate = form.watch("rateType");
+  useEffect(() => {
+    if (!open || !selectedProperty) return;
+    const amount = selectedRate === "standard" ? selectedProperty.standardDepartureRate : selectedRate === "owner" ? selectedProperty.ownerRate : null;
+    if (selectedRate !== "custom") form.setValue("price", amount ?? 0);
+  }, [open, selectedPropertyId, selectedProperty?.id, selectedRate]);
 
   // Auto-fill price/duration/type when a template is chosen
   const handleTemplateChange = (templateId: string) => {
@@ -119,6 +129,7 @@ export function JobFormDialog({
       form.setValue("jobType", template.jobType as any);
       form.setValue("durationMinutes", template.defaultDurationMinutes);
       form.setValue("price", template.defaultPrice);
+      form.setValue("rateType", "custom");
     }
   };
 
@@ -157,6 +168,7 @@ export function JobFormDialog({
         internalNotes: values.internalNotes || null,
         customerNotes: values.customerNotes || null,
         price: values.price,
+        rateType: values.rateType,
         beforePhotos: "[]",
         afterPhotos: "[]",
         completedAt: null,
@@ -320,6 +332,7 @@ export function JobFormDialog({
                 </Select>
               </FormItem>
 
+              <Field label="Default service rate"><Choice label="Job default rate" value={selectedRate} options={rateOptions} onChange={v => form.setValue("rateType", v as any)} /></Field>
               <FormField
                 control={form.control}
                 name="price"

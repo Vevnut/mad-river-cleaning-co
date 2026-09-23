@@ -72,7 +72,7 @@ export default function ReportsPage() {
 
   // --- Unpaid / overdue invoices ---
   const unpaidInvoices = useMemo(
-    () => invoices.filter((i) => i.status === "overdue" || i.status === "partial" || i.status === "sent")
+    () => invoices.filter((i) => i.status === "overdue" || i.status === "partial" || i.status === "sent" || i.status === "viewed")
       .sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     [invoices]
   );

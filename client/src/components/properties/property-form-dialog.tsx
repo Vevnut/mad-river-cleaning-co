@@ -51,6 +51,13 @@ function defaults(customerId?: number): FormValues {
     unitType: "house",
     bedrooms: 1,
     bathrooms: 1,
+    fullBathrooms: 1,
+    halfBathrooms: 0,
+    standardDepartureRate: null,
+    standardDepartureRateName: "Standard Departure Cleaning",
+    ownerRate: null,
+    ownerRateName: "Owner Departure Cleaning",
+    invoiceNotes: "",
     maxOccupancy: 2,
     checkInTime: "16:00",
     checkOutTime: "10:00",
@@ -58,7 +65,7 @@ function defaults(customerId?: number): FormValues {
     accessNotes: "",
     supplyNotes: "",
     cleaningFrequency: "turnover",
-    basePrice: 100,
+    basePrice: 0,
     photoUrl: null,
     active: true,
   };
@@ -100,6 +107,13 @@ export function PropertyFormDialog({
               unitType: property.unitType,
               bedrooms: property.bedrooms,
               bathrooms: property.bathrooms,
+              fullBathrooms: property.fullBathrooms ?? Math.floor(property.bathrooms),
+              halfBathrooms: property.halfBathrooms ?? ((property.bathrooms % 1) === 0.5 ? 1 : 0),
+              standardDepartureRate: property.standardDepartureRate,
+              standardDepartureRateName: property.standardDepartureRateName || "Standard Departure Cleaning",
+              ownerRate: property.ownerRate,
+              ownerRateName: property.ownerRateName || "Owner Departure Cleaning",
+              invoiceNotes: property.invoiceNotes || "",
               maxOccupancy: property.maxOccupancy,
               checkInTime: property.checkInTime,
               checkOutTime: property.checkOutTime,
@@ -313,16 +327,16 @@ export function PropertyFormDialog({
               />
               <FormField
                 control={form.control}
-                name="bathrooms"
+                name="fullBathrooms"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Bathrooms *</FormLabel>
+                    <FormLabel>Full bathrooms</FormLabel>
                     <FormControl>
                       <Input
-                        {...field}
+                        {...field} value={field.value ?? 0}
                         type="number"
                         min={0}
-                        step={0.5}
+                        step={1}
                         onChange={(e) => field.onChange(e.target.valueAsNumber)}
                         data-testid="input-bathrooms"
                       />
@@ -331,6 +345,11 @@ export function PropertyFormDialog({
                   </FormItem>
                 )}
               />
+              <FormField control={form.control} name="halfBathrooms" render={({ field }) => (
+                <FormItem><FormLabel>Half bathrooms</FormLabel><FormControl>
+                  <Input {...field} value={field.value ?? 0} type="number" min={0} step={1} onChange={e => field.onChange(e.target.valueAsNumber)} />
+                </FormControl><FormMessage /></FormItem>
+              )} />
               <FormField
                 control={form.control}
                 name="maxOccupancy"
@@ -405,17 +424,18 @@ export function PropertyFormDialog({
               />
               <FormField
                 control={form.control}
-                name="basePrice"
+                name="standardDepartureRate"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Base Price ($) *</FormLabel>
+                    <FormLabel>Standard rate ($)</FormLabel>
                     <FormControl>
                       <Input
-                        {...field}
+                        {...field} value={field.value ?? ""}
                         type="number"
                         min={0}
-                        step={5}
-                        onChange={(e) => field.onChange(e.target.valueAsNumber)}
+                        step={0.01}
+                        placeholder="No default"
+                        onChange={(e) => field.onChange(e.target.value === "" ? null : e.target.valueAsNumber)}
                         data-testid="input-base-price"
                       />
                     </FormControl>
@@ -424,6 +444,14 @@ export function PropertyFormDialog({
                 )}
               />
             </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <FormField control={form.control} name="standardDepartureRateName" render={({ field }) => <FormItem><FormLabel>Standard rate label</FormLabel><FormControl><Input {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
+              <FormField control={form.control} name="ownerRate" render={({ field }) => <FormItem><FormLabel>Owner rate ($)</FormLabel><FormControl><Input {...field} value={field.value ?? ""} type="number" step=".01" min="0" placeholder="No default" onChange={e => field.onChange(e.target.value === "" ? null : e.target.valueAsNumber)} /></FormControl><FormMessage /></FormItem>} />
+              <FormField control={form.control} name="ownerRateName" render={({ field }) => <FormItem><FormLabel>Owner rate label</FormLabel><FormControl><Input {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
+            </div>
+            <p className="text-xs text-muted-foreground">Leave a rate blank to skip its default charge. Only the selected rate is added to an invoice. Bathroom total: {(form.watch("fullBathrooms") || 0) + (form.watch("halfBathrooms") || 0) * 0.5}.</p>
+            <FormField control={form.control} name="invoiceNotes" render={({ field }) => <FormItem><FormLabel>Default invoice notes / client message</FormLabel><FormControl><Textarea {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
 
             <FormField
               control={form.control}

@@ -267,7 +267,7 @@ export default function JobDetailPage() {
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
-                onClick={() => generateInvoice.mutate()}
+                onClick={() => navigate(`/invoices/new?jobId=${jobId}`)}
                 disabled={generateInvoice.isPending}
                 data-testid="button-generate-invoice"
               >
@@ -344,6 +344,7 @@ export default function JobDetailPage() {
             <div className="flex items-center gap-2 text-sm">
               <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
               <span className="tabular-nums font-medium">{formatMoney(job.price)}</span>
+              <span className="text-xs text-muted-foreground ml-2">{job.rateType === "owner" ? "Owner rate" : job.rateType === "standard" ? "Standard departure rate" : "Custom rate"}</span>
               <span className="text-muted-foreground capitalize">&middot; {job.jobType.replace("_", " ")}</span>
             </div>
             <Button size="sm" onClick={handleSaveSchedule} disabled={updateJob.isPending} data-testid="button-save-schedule">

@@ -13,4 +13,9 @@ data.db-journal
 !.env.example
 
 *.log
+backups/
+tests/.data/
+*.db
+*.db-shm
+*.db-wal
 .DS_Store

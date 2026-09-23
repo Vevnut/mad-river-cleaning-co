@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/select";
 import { useTheme } from "@/components/theme-provider";
 import { GlobalSearchDialog } from "@/components/global-search";
+import { apiRequest, setSessionToken, queryClient } from "@/lib/queryClient";
 
 interface AppHeaderProps {
   onNewCustomer: () => void;
@@ -44,7 +45,7 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
 
       <button
         onClick={() => setSearchOpen(true)}
-        className="flex-1 max-w-md h-9 flex items-center gap-2 pl-2.5 pr-2 rounded-md border bg-muted/40 text-sm text-muted-foreground hover:text-foreground hover-elevate transition-colors"
+        className="flex-1 min-w-0 max-w-md h-9 flex items-center gap-2 pl-2.5 pr-2 rounded-md border bg-muted/40 text-sm text-muted-foreground hover:text-foreground hover-elevate transition-colors"
         aria-label="Open global search"
         data-testid="input-global-search"
       >
@@ -55,7 +56,7 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
         </kbd>
       </button>
 
-      <div className="flex items-center gap-2 ml-auto">
+      <div className="flex shrink-0 items-center gap-2 ml-auto">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button size="sm" className="gap-1" data-testid="button-quick-action">
@@ -82,16 +83,7 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Select value={role} onValueChange={setRole}>
-          <SelectTrigger className="h-9 w-[110px] text-xs" data-testid="select-role-badge">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="Admin">Admin</SelectItem>
-            <SelectItem value="Office">Office</SelectItem>
-            <SelectItem value="Cleaner">Cleaner</SelectItem>
-          </SelectContent>
-        </Select>
+        <Button variant="ghost" size="sm" onClick={async () => { await apiRequest("POST", "/api/logout"); setSessionToken(""); queryClient.clear(); window.location.reload(); }}>Sign out</Button>
 
         <Button
           size="icon"

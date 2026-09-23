@@ -27,6 +27,8 @@ import type {
 } from "@shared/schema";
 import { computeInvoiceTotals, deriveInvoiceStatus, round2 } from "./invoice-utils";
 import { renderInvoicePrintHtml } from "./invoice-print-template";
+import { registerAuth, protect } from "./auth";
+import { registerBilling, registerPublicBilling } from "./billing";
 
 // NOTE: drizzle-zod@0.7.1 + zod@4.4.3 infer enum-typed insert schema fields as
 // a broken union (see SCHEMA.md). Runtime validation via `safeParse` below is
@@ -37,6 +39,41 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  registerAuth(app);
+  registerPublicBilling(app);
+  protect(app);
+  registerBilling(app);
+  // Normalize legacy fields without ever touching existing invoice snapshots.
+  app.use("/api/properties", async (req, res, next) => {
+    if (!["POST", "PATCH"].includes(req.method)) return next();
+    const id = Number(req.path.slice(1));
+    const old = id ? await storage.getProperty(id) : undefined;
+    const b = req.body;
+    if ("fullBathrooms" in b || "halfBathrooms" in b) {
+      const full = b.fullBathrooms ?? old?.fullBathrooms ?? 0, half = b.halfBathrooms ?? old?.halfBathrooms ?? 0;
+      if (!Number.isInteger(full) || !Number.isInteger(half) || full < 0 || half < 0)
+        return res.status(400).json({ message: "Full and half bathrooms must be non-negative whole numbers." });
+      b.fullBathrooms = full; b.halfBathrooms = half; b.bathrooms = full + half * 0.5;
+    } else if (b.bathrooms != null && b.bathrooms >= 0 && Number.isInteger(b.bathrooms * 2)) {
+      b.fullBathrooms = Math.floor(b.bathrooms); b.halfBathrooms = (b.bathrooms % 1) * 2;
+    }
+    if ("standardDepartureRate" in b) b.basePrice = b.standardDepartureRate ?? 0;
+    else if ("basePrice" in b) b.standardDepartureRate = b.basePrice;
+    if (b.customerId && !(await storage.getCustomer(b.customerId))) return res.status(400).json({ message: "Select an existing customer." });
+    next();
+  });
+  app.use("/api/jobs", async (req, res, next) => {
+    if (!["POST", "PATCH"].includes(req.method)) return next();
+    const old = Number(req.path.slice(1)) ? await storage.getJob(Number(req.path.slice(1))) : undefined;
+    const b = req.body, property = await storage.getProperty(b.propertyId ?? old?.propertyId ?? 0);
+    if (!property) return res.status(400).json({ message: "Select an existing property." });
+    if (b.customerId && b.customerId !== property.customerId) return res.status(400).json({ message: "Job owner must match property owner." });
+    b.customerId = property.customerId;
+    if (req.method === "POST" && !b.rateType) b.rateType = b.price == null ? "standard" : "custom";
+    if (b.price == null && b.rateType) b.price = b.rateType === "owner" ? property.ownerRate ?? 0 : b.rateType === "standard" ? property.standardDepartureRate ?? 0 : 0;
+    if (b.price != null && (typeof b.price !== "number" || !Number.isFinite(b.price) || b.price < 0)) return res.status(400).json({ message: "Job price cannot be negative." });
+    next();
+  });
   // =========================================================================
   // Customers — full CRUD (Phase 1)
   // =========================================================================

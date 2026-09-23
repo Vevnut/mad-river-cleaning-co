@@ -96,6 +96,8 @@ export default function SettingsPage() {
 
       <Tabs defaultValue="business" className="w-full">
         <TabsList className="flex-wrap h-auto">
+          <TabsTrigger value="services">Services & Add-ons</TabsTrigger>
+          <TabsTrigger value="billing-setup">Payments & Access</TabsTrigger>
           <TabsTrigger value="business" className="gap-1.5" data-testid="tab-business-info">
             <Building2 className="h-3.5 w-3.5" /> Business Info
           </TabsTrigger>
@@ -112,6 +114,8 @@ export default function SettingsPage() {
             <Bell className="h-3.5 w-3.5" /> Notifications
           </TabsTrigger>
         </TabsList>
+        <TabsContent value="services" className="mt-4"><ServiceSettings /></TabsContent>
+        <TabsContent value="billing-setup" className="mt-4"><BillingSetup /></TabsContent>
 
         {/* Business Info */}
         <TabsContent value="business" className="mt-4">
@@ -339,3 +343,4 @@ export default function SettingsPage() {
     </div>
   );
 }
+import { ServiceSettings, BillingSetup } from "@/components/service-settings";

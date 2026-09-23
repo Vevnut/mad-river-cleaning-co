@@ -1,252 +1,106 @@
 import { useState } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, Printer, DollarSign, Building2, Briefcase } from "lucide-react";
-import type { Invoice, Customer, InvoiceItem, Payment, AppSettings, Job } from "@shared/schema";
-import { apiRequest, apiUrl } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { StatusBadge } from "@/components/status-badge";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import { RecordPaymentDialog } from "@/components/invoices/record-payment-dialog";
-import { formatMoney, formatDate } from "@/lib/format";
+import { Field, Choice, rateOptions } from "@/components/billing-fields";
+import { InvoicePreview } from "@/pages/public-invoice";
+import { formatMoney, businessDate } from "@/lib/format";
+import { ArrowLeft, Send, Printer, Plus } from "lucide-react";
 
-const BANNER_STYLES: Record<string, string> = {
-  paid: "bg-status-paid-bg text-status-paid border-status-paid/20",
-  partial: "bg-status-partial-bg text-status-partial border-status-partial/20",
-  overdue: "bg-status-overdue-bg text-status-overdue border-status-overdue/20",
-  canceled: "bg-status-canceled-bg text-status-canceled border-status-canceled/20",
-  draft: "bg-muted text-muted-foreground border-border",
-  sent: "bg-status-scheduled-bg text-status-scheduled border-status-scheduled/20",
-};
-
-const BANNER_LABEL: Record<string, string> = {
-  paid: "Paid in Full",
-  partial: "Partially Paid",
-  overdue: "Overdue",
-  canceled: "Canceled",
-  draft: "Draft — Not Yet Sent",
-  sent: "Sent — Awaiting Payment",
-};
-
+const methods = [["cash", "Cash"], ["check", "Check"], ["venmo", "Venmo"], ["zelle", "Zelle"], ["bank_transfer", "Bank transfer"], ["manual_card", "Card processed manually"], ["other", "Other"]].map(([value, label]) => ({ value, label }));
 export default function InvoiceDetailPage() {
-  const params = useParams<{ id: string }>();
-  const invoiceId = Number(params.id);
-  const [paymentOpen, setPaymentOpen] = useState(false);
-
-  const { data: invoice, isLoading } = useQuery<Invoice>({
-    queryKey: ["/api/invoices", invoiceId],
-    queryFn: async () => (await apiRequest("GET", `/api/invoices/${invoiceId}`)).json(),
-  });
-  const { data: customer } = useQuery<Customer>({
-    queryKey: ["/api/customers", invoice?.customerId],
-    queryFn: async () => (await apiRequest("GET", `/api/customers/${invoice!.customerId}`)).json(),
-    enabled: !!invoice,
-  });
-  const { data: items = [] } = useQuery<InvoiceItem[]>({
-    queryKey: ["/api/invoices", invoiceId, "items"],
-    queryFn: async () => (await apiRequest("GET", `/api/invoices/${invoiceId}/items`)).json(),
-    enabled: !!invoice,
-  });
-  const { data: paymentsList = [] } = useQuery<Payment[]>({
-    queryKey: ["/api/invoices", invoiceId, "payments"],
-    queryFn: async () => (await apiRequest("GET", `/api/invoices/${invoiceId}/payments`)).json(),
-    enabled: !!invoice,
-  });
-  const { data: job } = useQuery<Job>({
-    queryKey: ["/api/jobs", invoice?.jobId],
-    queryFn: async () => (await apiRequest("GET", `/api/jobs/${invoice!.jobId}`)).json(),
-    enabled: !!invoice?.jobId,
-  });
-  const { data: settings } = useQuery<AppSettings>({ queryKey: ["/api/settings"] });
-
-  if (isLoading) {
-    return (
-      <div className="space-y-4 p-4 md:p-6">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-64 w-full" />
-      </div>
-    );
-  }
-
-  if (!invoice) {
-    return (
-      <div className="p-6">
-        <p className="text-sm text-muted-foreground">Invoice not found.</p>
-        <Link href="/invoices" className="text-sm text-primary hover:underline">Back to Invoices</Link>
-      </div>
-    );
-  }
-
-  const balance = Math.max(0, invoice.total - invoice.amountPaid);
-  const canRecordPayment = invoice.status !== "paid" && invoice.status !== "canceled";
-
-  return (
-    <div className="space-y-4 p-4 md:p-6 max-w-3xl">
-      <div className="flex flex-wrap items-center gap-2">
-        <Link href="/invoices">
-          <Button size="icon" variant="ghost" data-testid="button-back-invoices-detail">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <h1 className="text-xl font-semibold min-w-0 basis-full sm:basis-auto sm:flex-1 truncate" data-testid="text-invoice-number">
-          {invoice.invoiceNumber}
-        </h1>
-        <StatusBadge status={invoice.status} />
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={() => window.open(apiUrl(`/api/invoices/${invoiceId}/print`), "_blank")}
-          data-testid="button-print-invoice"
-        >
-          <Printer className="h-3.5 w-3.5" /> Print / Save PDF
-        </Button>
-        {canRecordPayment && (
-          <Button size="sm" className="gap-1.5" onClick={() => setPaymentOpen(true)} data-testid="button-open-record-payment">
-            <DollarSign className="h-3.5 w-3.5" /> Record Payment
-          </Button>
-        )}
-      </div>
-
-      {/* Payment status banner */}
-      <div
-        className={`rounded-md border px-4 py-2.5 text-sm font-medium ${BANNER_STYLES[invoice.status] ?? BANNER_STYLES.draft}`}
-        data-testid="banner-payment-status"
-      >
-        {BANNER_LABEL[invoice.status] ?? invoice.status}
-        {balance > 0 && invoice.status !== "draft" && (
-          <span className="ml-1.5 font-normal opacity-90">— balance due {formatMoney(balance)}</span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Building2 className="h-4 w-4 text-muted-foreground" /> Bill To
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            {customer ? (
-              <>
-                <Link href={`/customers/${customer.id}`} className="font-medium hover:underline" data-testid="link-invoice-customer">
-                  {customer.companyName || customer.name}
-                </Link>
-                {customer.companyName && <p className="text-muted-foreground">{customer.name}</p>}
-                <p className="text-muted-foreground">{customer.billingAddressLine1}{customer.billingAddressLine2 ? `, ${customer.billingAddressLine2}` : ""}</p>
-                <p className="text-muted-foreground">{customer.billingCity}, {customer.billingState} {customer.billingZip}</p>
-                <p className="text-muted-foreground">{customer.phone} &middot; {customer.email}</p>
-              </>
-            ) : (
-              <Skeleton className="h-16 w-full" />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Briefcase className="h-4 w-4 text-muted-foreground" /> Invoice Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-1 text-sm">
-            <p><span className="text-muted-foreground">Issued:</span> {formatDate(invoice.issueDate)}</p>
-            <p><span className="text-muted-foreground">Due:</span> {formatDate(invoice.dueDate)}</p>
-            {job && (
-              <p>
-                <span className="text-muted-foreground">Source job:</span>{" "}
-                <Link href={`/jobs/${job.id}`} className="hover:underline" data-testid="link-invoice-source-job">
-                  Job #{job.id}
-                </Link>
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Line Items</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto rounded-md border">
-            <Table className="min-w-[520px]">
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="min-w-[220px]">Description</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Qty</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Unit Price</TableHead>
-                  <TableHead className="text-right whitespace-nowrap">Amount</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {items.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={4} className="text-center text-sm text-muted-foreground py-6">No line items.</TableCell>
-                  </TableRow>
-                ) : (
-                  items.map((it) => (
-                    <TableRow key={it.id} data-testid={`row-invoice-item-${it.id}`}>
-                      <TableCell className="whitespace-nowrap">
-                        {it.description} <span className="text-xs text-muted-foreground capitalize">({it.itemType})</span>
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums whitespace-nowrap">{it.quantity}</TableCell>
-                      <TableCell className="text-right tabular-nums whitespace-nowrap">{formatMoney(it.unitPrice)}</TableCell>
-                      <TableCell className="text-right tabular-nums font-medium whitespace-nowrap">{formatMoney(it.amount)}</TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          <div className="mt-3 ml-auto max-w-[280px] space-y-1.5 text-sm">
-            <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span className="tabular-nums">{formatMoney(invoice.subtotal)}</span></div>
-            {invoice.discountAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Discount</span><span className="tabular-nums">-{formatMoney(invoice.discountAmount)}</span></div>}
-            {invoice.travelFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Travel Fee</span><span className="tabular-nums">{formatMoney(invoice.travelFee)}</span></div>}
-            {invoice.rushFee > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Rush Fee</span><span className="tabular-nums">{formatMoney(invoice.rushFee)}</span></div>}
-            <div className="flex justify-between pt-1.5 border-t font-semibold text-base"><span>Total</span><span className="tabular-nums" data-testid="text-invoice-total">{formatMoney(invoice.total)}</span></div>
-            {invoice.amountPaid > 0 && <div className="flex justify-between text-status-paid"><span>Amount Paid</span><span className="tabular-nums">-{formatMoney(invoice.amountPaid)}</span></div>}
-            {balance > 0 && <div className="flex justify-between font-semibold text-status-overdue"><span>Balance Due</span><span className="tabular-nums" data-testid="text-invoice-balance">{formatMoney(balance)}</span></div>}
-          </div>
-
-          {invoice.notes && (
-            <p className="mt-4 rounded-md bg-muted/50 p-3 text-sm text-muted-foreground whitespace-pre-wrap" data-testid="text-invoice-notes">
-              {invoice.notes}
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Payment History</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {paymentsList.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-2" data-testid="empty-payment-history">No payments recorded yet.</p>
-          ) : (
-            <ul className="space-y-2">
-              {paymentsList.map((p) => (
-                <li key={p.id} className="flex items-center justify-between rounded-md border p-2.5 text-sm" data-testid={`row-payment-${p.id}`}>
-                  <div>
-                    <p className="font-medium tabular-nums">{formatMoney(p.amount)}</p>
-                    <p className="text-xs text-muted-foreground capitalize">{p.method} &middot; {formatDate(p.paidDate)}{p.reference ? ` · ${p.reference}` : ""}</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </CardContent>
-      </Card>
-
-      <RecordPaymentDialog invoice={invoice} open={paymentOpen} onOpenChange={setPaymentOpen} />
+  const { id } = useParams<{ id: string }>();
+  const endpoint = `/api/invoices/${id}`;
+  const [modal, setModal] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const [send, setSend] = useState<any>({}), [payment, setPayment] = useState<any>({});
+  const { data: inv, error: loadError } = useQuery<any>({ queryKey: ["/api/invoices", Number(id)], queryFn: async () => (await apiRequest("GET", endpoint)).json(), staleTime: 0 });
+  const { data: items = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "items"], queryFn: async () => (await apiRequest("GET", `${endpoint}/items`)).json() });
+  const { data: payments = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "payments"], queryFn: async () => (await apiRequest("GET", `${endpoint}/payments`)).json() });
+  const { data: history = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "activity"], queryFn: async () => (await apiRequest("GET", `${endpoint}/activity`)).json() });
+  const { data: owner } = useQuery<any>({ queryKey: ["/api/customers", inv?.customerId], enabled: !!inv, queryFn: async () => (await apiRequest("GET", `/api/customers/${inv.customerId}`)).json() });
+  const { data: config } = useQuery<any>({ queryKey: ["/api/integrations"] });
+  const refresh = () => { queryClient.invalidateQueries({ queryKey: ["/api/invoices"] }); queryClient.invalidateQueries({ queryKey: ["/api/payments"] }); };
+  const action = async (path: string, payload?: any) => {
+    setBusy(true); setError("");
+    try { await apiRequest("POST", path, payload); refresh(); setModal(""); if (path.endsWith("/send")) setSend({}); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
+  };
+  if (loadError) return <p className="p-6 text-destructive">{(loadError as Error).message}</p>;
+  if (!inv) return <p className="p-6">Loading invoice…</p>;
+  const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : owner;
+  return <div className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
+    <div className="flex flex-wrap items-center gap-3"><Link href="/invoices"><Button variant="ghost" size="icon" aria-label="Back to invoices"><ArrowLeft className="h-4 w-4" /></Button></Link><h1 className="text-xl font-semibold flex-1">{inv.invoiceNumber}</h1><StatusBadge status={inv.status} /></div>
+    <div className="flex flex-wrap gap-2">
+      {inv.status !== "canceled" && <Button disabled={busy} onClick={async () => {
+        setBusy(true); setError("");
+        try {
+          const pending = await (await apiRequest("GET", `${endpoint}/pending-send`)).json();
+          if (pending) setSend({ ...pending, locked: true });
+          else if (!send.requestKey) setSend({ recipient: customer?.email || "", subject: `Invoice ${inv.invoiceNumber} from Mad River Cleaning Co.`, message: inv.notes || "Thank you for your business. Please review your invoice below.", requestKey: crypto.randomUUID() });
+          setModal("send");
+        } catch (e: any) { setError(e.message); } finally { setBusy(false); }
+      }}><Send className="h-4 w-4 mr-2" />Send Invoice</Button>}
+      <Button variant="outline" onClick={() => { setModal("preview"); setError(""); }}><Printer className="h-4 w-4 mr-2" />Preview / PDF</Button>
+      {inv.status !== "canceled" && <><Link href={`/invoices/${id}/edit`}><Button variant="outline">Edit invoice</Button></Link>
+        {inv.balanceDue > 0 && <Button variant="outline" onClick={() => { setPayment({ invoiceId: inv.id, amount: inv.balanceDue, method: "cash", paidDate: businessDate(), reference: "", note: "", requestKey: crypto.randomUUID() }); setError(""); setModal("payment"); }}><Plus className="h-4 w-4 mr-2" />Record Payment</Button>}
+      </>}
     </div>
-  );
+    <Card><CardContent className="pt-6 grid sm:grid-cols-2 gap-6">
+      <div className="space-y-2 text-sm"><p className="text-xs uppercase tracking-wide text-muted-foreground">Customer / owner</p><Link href={`/customers/${inv.customerId}`} className="font-semibold">{customer?.companyName || customer?.name}</Link><p className="text-muted-foreground">{customer?.email}</p><p className="text-muted-foreground">{customer?.billingAddressLine1}<br />{customer?.billingCity}, {customer?.billingState} {customer?.billingZip}</p>
+        {inv.propertyId && <Link href={`/properties/${inv.propertyId}`} className="block whitespace-pre-line">{inv.propertyAddress}</Link>}
+      </div>
+      <div className="space-y-2 text-sm"><p>Issued {inv.issueDate}</p><p>Due {inv.dueDate}</p><p className="text-muted-foreground">{rateOptions.find(r => r.value === inv.rateType)?.label}</p>{inv.jobId && <Link href={`/jobs/${inv.jobId}`} className="block text-primary">Source job #{inv.jobId}</Link>}
+        {inv.sentAt && <p className="text-xs text-muted-foreground">Sent {new Date(inv.sentAt).toLocaleString()}</p>}
+        <div className="border-t pt-3"><p className="text-muted-foreground">Balance due</p><p className="text-3xl font-semibold tabular-nums" data-testid="text-invoice-balance">{formatMoney(inv.balanceDue)}</p></div>
+      </div>
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">Invoice charges</CardTitle></CardHeader><CardContent className="space-y-4">
+      {items.map(i => <div key={i.id} className="flex justify-between gap-4 border-b pb-3"><div className="min-w-0"><p className="font-medium text-sm">{i.description}</p>{!!i.isAutoAdded && <p className="text-xs text-primary">From property defaults</p>}{i.descriptionSnapshot && <p className="text-xs text-muted-foreground">{i.descriptionSnapshot}</p>}<p className="text-xs text-muted-foreground">{i.quantity} × {formatMoney(i.unitPrice)}</p></div><span className="tabular-nums text-sm">{formatMoney(i.amount)}</span></div>)}
+      <div className="ml-auto max-w-sm space-y-2 text-sm">{[["Subtotal", inv.subtotal], ["Discount", -inv.discountAmount], ["Travel fee", inv.travelFee], ["Rush fee", inv.rushFee], ["Total", inv.total], ["Payments received", inv.amountPaid]].map(([label, value]) => <div key={label} className="flex justify-between"><span>{label}</span><span>{formatMoney(Number(value))}</span></div>)}</div>
+      {inv.notes && <div className="bg-muted/40 p-3 rounded-md text-sm whitespace-pre-wrap"><p className="font-medium mb-1">Message to client</p>{inv.notes}</div>}
+      {inv.internalNotes && <div className="border rounded-md p-3 text-sm whitespace-pre-wrap"><p className="font-medium mb-1">Internal notes · not shown to client</p>{inv.internalNotes}</div>}
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">Payment history</CardTitle></CardHeader><CardContent className="space-y-3">
+      {!payments.length && <p className="text-sm text-muted-foreground">No payments recorded. Cash, check, Venmo, Zelle and other methods are still welcome.</p>}
+      {payments.map(p => <div key={p.id} className="border rounded-md p-3 text-sm"><div className="flex justify-between"><span className="capitalize">{p.method.replaceAll("_", " ")}</span><strong>{formatMoney(p.amount)}</strong></div><p className="text-xs text-muted-foreground">{p.paidDate} · {p.provider || "manual"} · {p.reference || p.providerTransactionId || "No reference"}</p>{p.note && <p className="text-xs mt-2">Internal: {p.note}</p>}</div>)}
+      {config?.stripe && <Button variant="outline" size="sm" disabled={busy} onClick={() => action(`${endpoint}/cancel-checkout`)}>Cancel / reconcile active online checkout</Button>}
+    </CardContent></Card>
+    <Card><CardHeader><CardTitle className="text-base">Invoice activity</CardTitle></CardHeader><CardContent className="space-y-4">
+      {!history.length && <p className="text-sm text-muted-foreground">Historical invoice. Activity tracking starts with this upgrade.</p>}
+      {history.map(h => { const d = JSON.parse(h.details); return <div key={h.id} className="text-sm border-b pb-3"><p className="capitalize font-medium">{h.activityType.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground">{new Date(h.createdAt).toLocaleString()} · {h.actor}</p>{d.recipient && <p className="text-xs mt-1">To: {d.recipient} {d.subject && `· ${d.subject}`}</p>}{d.message && <p className="text-xs whitespace-pre-wrap mt-1">{d.message}</p>}{d.amount != null && <p className="text-xs">{formatMoney(d.amount)}</p>}</div>; })}
+    </CardContent></Card>
+    {!inv.amountPaid && inv.status !== "canceled" && <Button variant="ghost" onClick={() => { setError(""); setModal("void"); }}>Void / cancel invoice</Button>}
+    {error && !modal && <p role="alert" className="text-destructive text-sm">{error}</p>}
+    <Dialog open={!!modal} onOpenChange={v => !v && !busy && setModal("")}><DialogContent className={modal === "preview" || modal === "send" ? "max-w-3xl max-h-[90vh] overflow-y-auto" : "max-w-lg max-h-[90vh] overflow-y-auto"}>
+      <DialogHeader><DialogTitle>{modal === "send" ? "Review & send invoice" : modal === "payment" ? "Record Payment" : modal === "void" ? "Void this invoice?" : "Client invoice preview"}</DialogTitle>
+        <DialogDescription>{modal === "send" ? "Confirm the recipient and complete message before sending." : modal === "payment" ? "Record a payment already received outside online checkout." : modal === "void" ? "This cancels the invoice and disables its payment link. History is retained." : "Print or save a professional PDF."}</DialogDescription></DialogHeader>
+      {modal === "preview" && <InvoicePreview invoiceId={inv.id} />}
+      {modal === "send" && <form className="space-y-4" onSubmit={async e => { e.preventDefault(); await action(`${endpoint}/send`, send); }}>
+        {send.locked && <p className="text-sm rounded-md border p-3">A previous send has an uncertain result. Review the original message and retry it unchanged to avoid duplicate emails.</p>}
+        {!config?.email && <p className="text-sm rounded-md bg-muted p-3">Email is not configured yet. A server administrator must configure Resend before this can be sent. No email has been sent.</p>}
+        <Field label="Recipient"><Input aria-label="Invoice recipient" readOnly={send.locked} required type="email" value={send.recipient || ""} onChange={e => setSend({ ...send, recipient: e.target.value })} /></Field>
+        <Field label="Subject"><Input aria-label="Invoice email subject" readOnly={send.locked} required value={send.subject || ""} onChange={e => setSend({ ...send, subject: e.target.value })} /></Field>
+        <Field label="Message"><Textarea aria-label="Invoice email message" readOnly={send.locked} value={send.message || ""} onChange={e => setSend({ ...send, message: e.target.value })} /></Field>
+        <div className="rounded-md border p-3 text-sm space-y-2"><p>Invoice {inv.invoiceNumber} · Total {formatMoney(inv.total)}</p><p>Balance {formatMoney(inv.balanceDue)} · Due {inv.dueDate}</p><p>{config?.stripe ? `View & Pay Invoice button (${config.mode} card payments)` : "View Invoice button; online card payments unavailable"}</p><p>You may also pay using your usual arrangement with the business. Online payment is optional.</p></div>
+        <details><summary className="text-sm cursor-pointer">View client invoice</summary><div className="mt-3"><InvoicePreview invoiceId={inv.id} /></div></details>
+        <Button type="submit" disabled={busy || !config?.email}>{busy ? "Sending…" : "Confirm & send invoice"}</Button>
+      </form>}
+      {modal === "payment" && <form className="space-y-4" onSubmit={e => { e.preventDefault(); action("/api/payments", payment); }}>
+        <Field label={`Amount ($) · outstanding ${formatMoney(inv.balanceDue)}`}><Input aria-label="Payment amount" type="number" min=".01" max={inv.balanceDue} step=".01" required value={payment.amount} onChange={e => setPayment({ ...payment, amount: e.target.valueAsNumber })} /></Field>
+        <Field label="Payment method"><Choice label="Payment method" value={payment.method} options={methods} onChange={v => setPayment({ ...payment, method: v })} /></Field>
+        <Field label="Payment date"><Input aria-label="Payment date" type="date" required value={payment.paidDate} onChange={e => setPayment({ ...payment, paidDate: e.target.value })} /></Field>
+        <Field label="Reference / check number"><Input aria-label="Payment reference" value={payment.reference} onChange={e => setPayment({ ...payment, reference: e.target.value })} /></Field>
+        <Field label="Internal payment note"><Textarea aria-label="Payment note" value={payment.note} onChange={e => setPayment({ ...payment, note: e.target.value })} /></Field>
+        <Button type="submit" disabled={busy}>{busy ? "Recording…" : "Record received payment"}</Button>
+      </form>}
+      {modal === "void" && <Button variant="destructive" disabled={busy} onClick={() => action(`${endpoint}/void`)}>Confirm void invoice</Button>}
+      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+    </DialogContent></Dialog>
+  </div>;
 }

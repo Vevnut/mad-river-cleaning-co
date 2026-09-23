@@ -1,6 +1,6 @@
 import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
 import { createInsertSchema } from "drizzle-zod";
-import type { z } from "zod";
+import { z } from "zod";
 
 /* ============================================================================
  * Mad River Cleaning Co. — Data Model
@@ -70,6 +70,14 @@ export const properties = sqliteTable("properties", {
   unitType: text("unit_type", { enum: ["house", "condo", "cabin", "apartment", "cottage"] }).notNull(),
   bedrooms: integer("bedrooms").notNull(),
   bathrooms: real("bathrooms").notNull(),
+  fullBathrooms: integer("full_bathrooms"),
+  halfBathrooms: integer("half_bathrooms"),
+  legacyTotalBathrooms: real("legacy_total_bathrooms"),
+  standardDepartureRate: real("standard_departure_rate"),
+  standardDepartureRateName: text("standard_departure_rate_name"),
+  ownerRate: real("owner_rate"),
+  ownerRateName: text("owner_rate_name"),
+  invoiceNotes: text("invoice_notes"),
   maxOccupancy: integer("max_occupancy").notNull(),
   checkInTime: text("check_in_time").notNull(),
   checkOutTime: text("check_out_time").notNull(),
@@ -84,7 +92,13 @@ export const properties = sqliteTable("properties", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 
-export const insertPropertySchema = createInsertSchema(properties).omit({ id: true });
+export const insertPropertySchema = createInsertSchema(properties).omit({ id: true, legacyTotalBathrooms: true }).extend({
+  bathrooms: z.number().min(0), basePrice: z.number().min(0),
+  fullBathrooms: z.number().int().min(0).nullable().optional(),
+  halfBathrooms: z.number().int().min(0).nullable().optional(),
+  standardDepartureRate: z.number().min(0).nullable().optional(),
+  ownerRate: z.number().min(0).nullable().optional(),
+});
 export type InsertProperty = typeof properties.$inferInsert;
 export type Property = typeof properties.$inferSelect;
 
@@ -180,6 +194,7 @@ export const jobs = sqliteTable("jobs", {
   internalNotes: text("internal_notes"),
   customerNotes: text("customer_notes"),
   price: real("price").notNull(),
+  rateType: text("rate_type", { enum: ["standard", "owner", "custom"] }).notNull().default("custom"),
   beforePhotos: text("before_photos").notNull().default("[]"), // JSON string array
   afterPhotos: text("after_photos").notNull().default("[]"), // JSON string array
   completedAt: text("completed_at"),
@@ -196,11 +211,24 @@ export const invoices = sqliteTable("invoices", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   customerId: integer("customer_id").notNull().references(() => customers.id),
   jobId: integer("job_id").references(() => jobs.id),
+  propertyId: integer("property_id").references(() => properties.id),
+  rateType: text("rate_type", { enum: ["standard", "owner", "custom"] }).notNull().default("custom"),
+  propertyAddress: text("property_address"),
+  customerSnapshot: text("customer_snapshot"),
+  internalNotes: text("internal_notes"),
+  sentAt: text("sent_at"),
+  viewedAt: text("viewed_at"),
+  paidAt: text("paid_at"),
+  publicToken: text("public_token"),
+  publicEnabled: integer("public_enabled", { mode: "boolean" }).notNull().default(false),
+  requestKey: text("request_key"),
+  createdAt: text("created_at"),
+  updatedAt: text("updated_at"),
   invoiceNumber: text("invoice_number").notNull().unique(),
   issueDate: text("issue_date").notNull(),
   dueDate: text("due_date").notNull(),
   status: text("status", {
-    enum: ["draft", "sent", "paid", "partial", "overdue", "canceled"],
+    enum: ["draft", "sent", "viewed", "paid", "partial", "overdue", "canceled"],
   }).notNull().default("draft"),
   subtotal: real("subtotal").notNull().default(0),
   discountAmount: real("discount_amount").notNull().default(0),
@@ -257,6 +285,10 @@ export const invoiceItems = sqliteTable("invoice_items", {
   unitPrice: real("unit_price").notNull(),
   amount: real("amount").notNull(),
   sortOrder: integer("sort_order").notNull().default(0),
+  sourcePropertyServiceId: integer("source_property_service_id"),
+  descriptionSnapshot: text("description_snapshot"),
+  isAutoAdded: integer("is_auto_added", { mode: "boolean" }).notNull().default(false),
+  lineItemType: text("line_item_type").notNull().default("manual"),
 });
 
 export const insertInvoiceItemSchema = createInsertSchema(invoiceItems).omit({ id: true });
@@ -270,9 +302,15 @@ export const payments = sqliteTable("payments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
   amount: real("amount").notNull(),
-  method: text("method", { enum: ["card", "cash", "check", "ach", "other"] }).notNull(),
+  method: text("method", { enum: ["card", "cash", "check", "ach", "venmo", "zelle", "bank_transfer", "manual_card", "other"] }).notNull(),
   paidDate: text("paid_date").notNull(),
   reference: text("reference"),
+  provider: text("provider"),
+  providerTransactionId: text("provider_transaction_id"),
+  note: text("note"),
+  status: text("status").notNull().default("succeeded"),
+  requestKey: text("request_key"),
+  createdAt: text("created_at"),
 });
 
 export const insertPaymentSchema = createInsertSchema(payments).omit({ id: true });

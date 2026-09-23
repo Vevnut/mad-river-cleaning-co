@@ -25,7 +25,7 @@ import { exportRowsToCsv } from "@/lib/csv-export";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-const INVOICE_STATUSES = ["draft", "sent", "paid", "partial", "overdue", "canceled"] as const;
+const INVOICE_STATUSES = ["draft", "sent", "viewed", "paid", "partial", "overdue", "canceled"] as const;
 
 export default function InvoicesListPage() {
   const [search, setSearch] = useState("");
@@ -224,6 +224,7 @@ export default function InvoicesListPage() {
                       </ContextMenuItem>
                       <ContextMenuItem
                         data-testid={`contextmenuitem-delete-${inv.id}`}
+                        disabled={inv.status !== "draft" || inv.amountPaid > 0}
                         className="text-destructive"
                         onClick={() => setDeleteTarget(inv)}
                       >

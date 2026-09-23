@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 
 export type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "canceled";
-export type InvoiceStatus = "draft" | "sent" | "paid" | "partial" | "overdue" | "canceled";
+export type InvoiceStatus = "draft" | "sent" | "viewed" | "paid" | "partial" | "overdue" | "canceled";
 export type AnyStatus = JobStatus | InvoiceStatus;
 
 const STATUS_CONFIG: Record<
@@ -19,8 +19,9 @@ const STATUS_CONFIG: Record<
   invoiced: { label: "Invoiced", icon: FileText, text: "text-status-invoiced", bg: "bg-status-invoiced-bg" },
   draft: { label: "Draft", icon: FileText, text: "text-muted-foreground", bg: "bg-muted" },
   sent: { label: "Sent", icon: FileText, text: "text-status-scheduled", bg: "bg-status-scheduled-bg" },
+  viewed: { label: "Viewed", icon: FileText, text: "text-status-scheduled", bg: "bg-status-scheduled-bg" },
   paid: { label: "Paid", icon: CircleDollarSign, text: "text-status-paid", bg: "bg-status-paid-bg" },
-  partial: { label: "Partial", icon: AlertTriangle, text: "text-status-partial", bg: "bg-status-partial-bg" },
+  partial: { label: "Partially paid", icon: AlertTriangle, text: "text-status-partial", bg: "bg-status-partial-bg" },
   overdue: { label: "Overdue", icon: CircleAlert, text: "text-status-overdue", bg: "bg-status-overdue-bg" },
   canceled: { label: "Canceled", icon: Ban, text: "text-status-canceled", bg: "bg-status-canceled-bg" },
 };

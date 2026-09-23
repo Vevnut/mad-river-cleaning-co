@@ -1,6 +1,9 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 const API_BASE = "__PORT_5000__".startsWith("__") ? "" : "__PORT_5000__";
+let sessionToken = "";
+export function setSessionToken(token: string) { sessionToken = token; }
+export function authHeaders() { return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}; }
 
 // Exported so call sites that build URLs outside of apiRequest/getQueryFn
 // (e.g. window.open for the printable invoice) still resolve through the
@@ -11,6 +14,9 @@ export function apiUrl(path: string): string {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
+    if (res.status === 401 && sessionToken) {
+      sessionToken = ""; window.dispatchEvent(new Event("workspace-session-expired"));
+    }
     const text = (await res.text()) || res.statusText;
     // API errors are JSON `{ message: string }` — surface just the clean
     // message when present instead of the raw "status: {...}" payload, so
@@ -35,7 +41,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: data ? { "Content-Type": "application/json" } : {},
+    headers: { ...authHeaders(), ...(data ? { "Content-Type": "application/json" } : {}) } as HeadersInit,
     body: data ? JSON.stringify(data) : undefined,
   });
 
@@ -49,7 +55,7 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(`${API_BASE}${queryKey.join("/")}`);
+    const res = await fetch(`${API_BASE}${queryKey.join("/")}`, { headers: authHeaders() as HeadersInit });
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;

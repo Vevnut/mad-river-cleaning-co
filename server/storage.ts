@@ -22,6 +22,7 @@ import type {
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import Database from "better-sqlite3";
 import { eq, and, gte, lte, type SQL } from "drizzle-orm";
+import { migrate } from "./migrations";
 
 export interface JobFilter {
   status?: string;
@@ -52,8 +53,10 @@ export class DeleteConflictError extends Error {
   }
 }
 
-const sqlite = new Database("data.db");
+export const sqlite = new Database(process.env.DATABASE_PATH || "data.db");
 sqlite.pragma("journal_mode = WAL");
+sqlite.pragma("foreign_keys = ON");
+migrate(sqlite);
 
 export const db = drizzle(sqlite);
 
