@@ -314,21 +314,48 @@ export function registerBilling(app: Express) {
   });
   app.patch("/api/services/:id", (req, res) => {
     const id = Number(req.params.id); one("service_catalog", id);
-    update("service_catalog", id, { ...serviceSchema.partial().parse(req.body), updatedAt: now() });
+    const parsed = serviceSchema.partial().parse(req.body);
+    // Zod defaults must not reset unrelated fields in a partial catalog edit.
+    const changes = Object.fromEntries(Object.entries(parsed).filter(([key]) => Object.prototype.hasOwnProperty.call(req.body, key)));
+    update("service_catalog", id, { ...changes, updatedAt: now() });
     res.json(one("service_catalog", id));
   });
   app.get("/api/properties/:id/services", (req, res) => { one("properties", Number(req.params.id)); res.json(rows("property_services", "property_id=?", Number(req.params.id))); });
-  const saveService = (req: any, res: any) => {
+  // Create the reusable catalog default and this property's override atomically.
+  // Property-only instructions and exclusions must never leak into the library.
+  app.post("/api/properties/:id/common-services", (req, res) => {
     const propertyId = Number(req.params.id); one("properties", propertyId);
     const d = propertyServiceSchema.parse(req.body);
-    if (d.serviceId) one("service_catalog", d.serviceId);
+    if (d.serviceId) fail(400, "Choose the existing common job instead of creating another.");
+    const c = serviceSchema.parse({ name: d.customName, description: d.customDescription, category: req.body.category,
+      defaultPrice: d.customPrice, defaultQuantity: d.defaultQuantity, defaultInclusionBehavior: d.invoiceBehavior });
+    if (d.excludesPropertyServiceId && one("property_services", d.excludesPropertyServiceId).propertyId !== propertyId)
+      fail(400, "An exclusion must be a service at this property.");
+    const result = sql.transaction(() => {
+      if (sql.prepare("SELECT id FROM service_catalog WHERE lower(trim(name))=lower(?)").get(c.name))
+        fail(409, "A common job with this name already exists. Choose it from the library, or use a different name.");
+      const serviceId = insert("service_catalog", { ...c, createdAt: now(), updatedAt: now() });
+      const id = insert("property_services", { ...d, serviceId, propertyId, createdAt: now(), updatedAt: now() });
+      return one("property_services", id);
+    })();
+    res.status(201).json(result);
+  });
+  const saveService = (req: any, res: any) => {
+    const propertyId = Number(req.params.id); one("properties", propertyId);
+    let id = Number(req.params.serviceId);
+    if (id && one("property_services", id).propertyId !== propertyId) fail(404, "Service not found.");
+    const d = propertyServiceSchema.parse(req.body);
+    if (d.serviceId) {
+      const catalogService = one("service_catalog", d.serviceId);
+      if (!req.params.serviceId && !catalogService.active) fail(400, "This common job is inactive. Enable it in the service catalog first.");
+      const existing = sql.prepare("SELECT id FROM property_services WHERE property_id=? AND service_id=? AND id<>?").get(propertyId, d.serviceId, Number(req.params.serviceId) || 0);
+      if (existing) fail(409, "This common job is already configured for this property. Edit the existing service instead.");
+    }
     if (d.excludesPropertyServiceId) {
       if (d.excludesPropertyServiceId === Number(req.params.serviceId) || one("property_services", d.excludesPropertyServiceId).propertyId !== propertyId)
         fail(400, "An exclusion must be a different service at this property.");
     }
-    let id = Number(req.params.serviceId);
     if (id) {
-      if (one("property_services", id).propertyId !== propertyId) fail(404, "Service not found.");
       update("property_services", id, { ...d, updatedAt: now() });
     } else id = insert("property_services", { ...d, propertyId, createdAt: now(), updatedAt: now() });
     res.json(one("property_services", id));

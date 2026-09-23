@@ -1,12 +1,12 @@
 # Mad River Cleaning Co. Billing Upgrade
 
-The updated app is available in the attached secured preview. This is an extension of the existing app, not a replacement database or a rebuild of the business records.
+The updated app is published at [Mad River Cleaning Co.](https://mad-river-cleaning-co.pplx.app), using the same address as before. This is an extension of the existing app, not a replacement database or a rebuild of the business records.
 
 The new billing workflows are implemented and tested locally. Live email delivery and real Stripe-hosted checkout still require server configuration and acceptance testing; no email or real payment was sent during development.
 
 ## Start here
 
-1. Open the attached Mad River Cleaning Co. preview.
+1. Open [Mad River Cleaning Co.](https://mad-river-cleaning-co.pplx.app) and follow the separately attached private first-time setup instructions.
 2. Use the separately attached **Private First-Time Setup** file to create your workspace account. Choose your own password; the setup code works only before the first account exists.
 3. Open a property, choose **Edit Property**, and review its full/half bathrooms, standard departure rate, owner rate, labels, and invoice notes.
 4. Configure reusable services under **Settings → Services & Add-ons**. Add or customize services in each property's **Services & Add-ons** section.
@@ -90,7 +90,7 @@ The local preview retained **9 customers, 17 properties, 2 jobs, 1 invoice, 2 in
 
 The 151 Pinnacle example and all payment/service test records were created only in isolated test databases. They were not inserted into the business database, and no made-up owner or departure rate was added to the real property list.
 
-This verification applies to the existing local data used by the preview. The separately published app's live database was not opened, replaced, or migrated during this work.
+This verification applies to the existing local data used by the preview. Before publication, a separate private, logical export captured the newer live records, including 13 customers, 21 properties, 3 jobs, 2 invoices, and 3 invoice line items. Publication updated the existing site rather than creating a replacement site; the deployment is intended to preserve its live SQLite database and apply additive migrations. Post-publication checks confirmed the app loads, setup is available, and unauthenticated requests for properties return HTTP 401. Authenticated live record counts and a full live restore test still need verification after the owner completes setup.
 
 ## Server configuration
 
@@ -155,7 +155,7 @@ Dashboard, customers, scheduling, stays, staff data, reports, checklist behavior
 - **Data deletion:** Unpaid drafts can be deleted. Sent/paid history is protected from hard deletion, unpaid invoices can be voided, and processor payments cannot be removed through the manual-payment deletion route.
 - **Refunds:** A Stripe refund/dispute workflow is not implemented. Reconcile those with the provider and business records before altering balances.
 - **Storage:** The built-in SQLite database is suitable for a prototype, not production-grade durable hosting. Before relying on this for live financial records, arrange managed persistent storage and tested external backups.
-- **Live publication:** Only the preview was deployed. This deploy did not return active published-site metadata, so the earlier published URL should not be assumed active; publishing requires a separate decision. If an older unauthenticated live version is still available, it does not gain this preview's protection automatically.
+- **Live publication:** The updated app is published at [the existing address](https://mad-river-cleaning-co.pplx.app). The website has public visibility, but business records are protected by workspace sign-in. The owner must complete first-time setup using the separately shared private instructions.
 - **Deployment preservation:** Do not replace a live database with this preview's copy. Back up the actual live database, deploy code without overwriting it, and run the additive migrations against that database.
 - **Account recovery:** There is not yet a self-service password-reset or fine-grained role-management screen. Administrator recovery requires server-side intervention.
 - **Build notices:** TypeScript and production build succeeded. Vite still reports a large-bundle advisory and a PostCSS plugin advisory; neither blocked the build.

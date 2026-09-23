@@ -18,6 +18,8 @@ original.close();
 const { registerRoutes } = await import("../server/routes");
 const { billingProviders } = await import("../server/billing");
 const { sqlite: db } = await import("../server/storage");
+// Account setup must be isolated from any users in the copied source database.
+db.exec("DELETE FROM auth_sessions; DELETE FROM auth_users; DELETE FROM auth_rate_limits");
 const app = express();
 app.use(express.json({ verify: (req: any, _, buffer) => { req.rawBody = buffer; } }));
 const server = createServer(app);
