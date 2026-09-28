@@ -71,6 +71,10 @@ export function removeDemoCustomers(sql: Database.Database, backupDir?: string):
     for (const n of data.notes.filter(r => sel.notes.has(r.__rowid)))
       if ((n.customer_id != null && !cust.has(n.customer_id)) || (n.property_id != null && !prop.has(n.property_id)) || (n.job_id != null && !job.has(n.job_id)))
         return { status: "skipped", reason: "a note is shared with a kept record" };
+    // invoice_items.source_property_service_id has no declared foreign key.
+    const svc = ids("property_services");
+    if (data.invoice_items?.some(r => !sel.invoice_items.has(r.__rowid) && svc.has(r.source_property_service_id)))
+      return { status: "skipped", reason: "a kept invoice line uses a demo property service" };
     // No kept row may reference any row being removed.
     for (const t of tables) for (const fk of sql.prepare(`PRAGMA foreign_key_list("${t}")`).all() as any[]) {
       if (!exists(fk.table)) continue;
