@@ -110,4 +110,18 @@ export function migrate(sql: Database.Database) {
       console.error("Demo customer cleanup did not run:", (err as Error).message);
     }
   }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=5").get()) {
+    sql.transaction(() => {
+      // Damage and Final Walkthrough photos replace the unused before/after placeholders.
+      sql.exec(`CREATE TABLE IF NOT EXISTS job_photos (
+        id INTEGER PRIMARY KEY, job_id INTEGER NOT NULL REFERENCES jobs(id),
+        section TEXT NOT NULL CHECK(section IN ('damage','final_walkthrough')),
+        file_name TEXT NOT NULL UNIQUE, original_name TEXT NOT NULL, size INTEGER NOT NULL,
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS job_photos_job ON job_photos(job_id, section);`);
+      const cols = new Set((sql.prepare("PRAGMA table_info(jobs)").all() as any[]).map(c => c.name));
+      if (!cols.has("damage_notes")) sql.exec("ALTER TABLE jobs ADD COLUMN damage_notes TEXT");
+      sql.prepare("INSERT INTO schema_migrations VALUES (5,?)").run(new Date().toISOString());
+    })();
+  }
 }

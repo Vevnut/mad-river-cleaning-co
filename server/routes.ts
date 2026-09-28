@@ -29,6 +29,7 @@ import { computeInvoiceTotals, deriveInvoiceStatus, round2 } from "./invoice-uti
 import { renderInvoicePrintHtml } from "./invoice-print-template";
 import { registerAuth, protect } from "./auth";
 import { registerBilling, registerPublicBilling } from "./billing";
+import { registerJobPhotos } from "./job-photos";
 
 // NOTE: drizzle-zod@0.7.1 + zod@4.4.3 infer enum-typed insert schema fields as
 // a broken union (see SCHEMA.md). Runtime validation via `safeParse` below is
@@ -43,6 +44,7 @@ export async function registerRoutes(
   registerPublicBilling(app);
   protect(app);
   registerBilling(app);
+  registerJobPhotos(app);
   // Normalize legacy fields without ever touching existing invoice snapshots.
   app.use("/api/properties", async (req, res, next) => {
     if (!["POST", "PATCH"].includes(req.method)) return next();

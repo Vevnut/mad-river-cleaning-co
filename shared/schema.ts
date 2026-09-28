@@ -193,6 +193,7 @@ export const jobs = sqliteTable("jobs", {
   }).notNull().default("scheduled"),
   internalNotes: text("internal_notes"),
   customerNotes: text("customer_notes"),
+  damageNotes: text("damage_notes"),
   price: real("price").notNull(),
   rateType: text("rate_type", { enum: ["standard", "owner", "custom"] }).notNull().default("custom"),
   beforePhotos: text("before_photos").notNull().default("[]"), // JSON string array

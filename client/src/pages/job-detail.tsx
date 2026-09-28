@@ -3,7 +3,7 @@ import { useParams, Link, useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft, Home, Building2, Clock, User, DollarSign, Plus, X,
-  CheckCircle2, Play, Ban, ImagePlus, ListChecks, Receipt, Sparkles,
+  CheckCircle2, Play, Ban, ListChecks, Receipt, Sparkles,
 } from "lucide-react";
 import type { Job, Property, Customer, Staff, JobTemplate, ServiceChecklist } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -22,6 +22,7 @@ import {
   Tooltip, TooltipContent, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatMoney, formatDate } from "@/lib/format";
+import { JobPhotos } from "@/components/jobs/job-photos";
 
 const STATUS_ORDER: Job["status"][] = ["scheduled", "in_progress", "completed", "invoiced"];
 const STATUS_LABELS: Record<Job["status"], string> = {
@@ -479,47 +480,13 @@ export default function JobDetailPage() {
         </Card>
       </div>
 
-      {/* Before/after photos */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">Before Photos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-2">
-              {[...Array(3)].map((_, i) => (
-                <button
-                  key={i}
-                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground hover-elevate"
-                  data-testid={`button-before-photo-${i}`}
-                >
-                  <ImagePlus className="h-5 w-5" />
-                  <span className="text-[10px]">Add Photo</span>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base">After Photos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-2">
-              {[...Array(3)].map((_, i) => (
-                <button
-                  key={i}
-                  className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground hover-elevate"
-                  data-testid={`button-after-photo-${i}`}
-                >
-                  <ImagePlus className="h-5 w-5" />
-                  <span className="text-[10px]">Add Photo</span>
-                </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Damage and final walkthrough photos (private to the workspace) */}
+      <JobPhotos
+        jobId={job.id}
+        damageNotes={job.damageNotes ?? null}
+        onSaveDamageNotes={(damageNotes) => updateJob.mutate({ damageNotes })}
+        saving={updateJob.isPending}
+      />
     </div>
   );
 }

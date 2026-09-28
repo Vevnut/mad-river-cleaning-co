@@ -385,6 +385,10 @@ export class DatabaseStorage implements IStorage {
     // Invoices/notes are independent records — unlink rather than delete or
     // block, so a job's billing/history isn't lost when the job itself is
     // removed.
+    // Damage/walkthrough photos are records worth keeping: never delete them silently.
+    const photoCount = (sqlite.prepare("SELECT count(*) n FROM job_photos WHERE job_id=?").get(id) as any).n;
+    if (photoCount > 0)
+      throw new DeleteConflictError(`Can't delete this job — it has ${photoCount} photo${photoCount === 1 ? "" : "s"}. Delete the photos first.`);
     db.delete(serviceChecklists).where(eq(serviceChecklists.jobId, id)).run();
     db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
     db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
