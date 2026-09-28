@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { removeDemoCustomers } from "./demo-cleanup";
 
 /** Additive, transactional migrations. Never runs drizzle push or rebuilds tables. */
 export function migrate(sql: Database.Database) {
@@ -93,5 +94,20 @@ export function migrate(sql: Database.Database) {
       sql.exec("CREATE TABLE auth_rate_limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL, resets_at INTEGER NOT NULL)");
       sql.prepare("INSERT INTO schema_migrations VALUES (3,?)").run(new Date().toISOString());
     })();
+  }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=4").get()) {
+    // One-time, owner-approved removal of the original demo customers.
+    // Failures never block startup; the migration is retried next start.
+    try {
+      const result = removeDemoCustomers(sql);
+      sql.exec("CREATE TABLE IF NOT EXISTS maintenance_log (version INTEGER PRIMARY KEY, result TEXT NOT NULL, created_at TEXT NOT NULL)");
+      sql.transaction(() => {
+        sql.prepare("INSERT OR REPLACE INTO maintenance_log VALUES (4,?,?)").run(JSON.stringify(result), new Date().toISOString());
+        sql.prepare("INSERT INTO schema_migrations VALUES (4,?)").run(new Date().toISOString());
+      })();
+      console.log("Demo customer cleanup:", result.status, result.reason || "", JSON.stringify(result.removed || {}));
+    } catch (err) {
+      console.error("Demo customer cleanup did not run:", (err as Error).message);
+    }
   }
 }
