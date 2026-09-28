@@ -11,7 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Field, Choice, rateOptions } from "@/components/billing-fields";
 import { InvoicePreview } from "@/pages/public-invoice";
 import { formatMoney, businessDate } from "@/lib/format";
-import { DeleteInvoiceDialog } from "@/components/invoices/delete-invoice-dialog";
+import { DeleteInvoiceDialog, pendingDelete } from "@/components/invoices/delete-invoice-dialog";
 import { ArrowLeft, Send, Printer, Plus, Trash2 } from "lucide-react";
 
 const methods = [["cash", "Cash"], ["check", "Check"], ["venmo", "Venmo"], ["zelle", "Zelle"], ["bank_transfer", "Bank transfer"], ["manual_card", "Card processed manually"], ["other", "Other"]].map(([value, label]) => ({ value, label }));
@@ -20,8 +20,8 @@ export default function InvoiceDetailPage() {
   const endpoint = `/api/invoices/${id}`;
   const [modal, setModal] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [send, setSend] = useState<any>({}), [payment, setPayment] = useState<any>({});
-  const [deleting, setDeleting] = useState(() => sessionStorage.getItem("open-delete-invoice") === id);
-  useEffect(() => { sessionStorage.removeItem("open-delete-invoice"); }, []);
+  const [deleting, setDeleting] = useState(() => pendingDelete.id === id);
+  useEffect(() => { pendingDelete.id = ""; }, []);
   const { data: inv, error: loadError } = useQuery<any>({ queryKey: ["/api/invoices", Number(id)], queryFn: async () => (await apiRequest("GET", endpoint)).json(), staleTime: 0 });
   const { data: items = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "items"], queryFn: async () => (await apiRequest("GET", `${endpoint}/items`)).json() });
   const { data: payments = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "payments"], queryFn: async () => (await apiRequest("GET", `${endpoint}/payments`)).json() });

@@ -16,6 +16,7 @@ import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { StatusBadge } from "@/components/status-badge";
+import { pendingDelete } from "@/components/invoices/delete-invoice-dialog";
 import { formatMoney, formatDate } from "@/lib/format";
 import { exportRowsToCsv } from "@/lib/csv-export";
 
@@ -204,7 +205,7 @@ export default function InvoicesListPage() {
                       <ContextMenuItem
                         data-testid={`contextmenuitem-delete-${inv.id}`}
                         className="text-destructive"
-                        onClick={() => { sessionStorage.setItem("open-delete-invoice", String(inv.id)); navigate(`/invoices/${inv.id}`); }}
+                        onClick={() => { pendingDelete.id = String(inv.id); navigate(`/invoices/${inv.id}`); }}
                       >
                         Delete…
                       </ContextMenuItem>

@@ -10,6 +10,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { formatMoney } from "@/lib/format";
 import { AlertTriangle } from "lucide-react";
 
+// Set by the Invoices list "Delete…" menu so the invoice page opens straight into step 1.
+export const pendingDelete = { id: "" };
+
 // Deleting an invoice takes three deliberate steps:
 // 1. review what will be removed, 2. tick "I understand", 3. type the invoice number.
 export function DeleteInvoiceDialog({ open, onOpenChange, inv, customerName, itemCount, payments, onVoidInstead }: {
