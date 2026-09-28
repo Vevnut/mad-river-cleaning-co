@@ -82,7 +82,7 @@ export function removeDemoCustomers(sql: Database.Database, backupDir?: string):
       "service_checklists", "jobs", "stays", "schedules", "property_services", "properties", "contacts", "customers"];
     const removed: Record<string, number> = {};
     for (const t of order) {
-      const r = [...(sel[t] || [])];
+      const r = Array.from(sel[t] || []);
       if (!r.length) continue;
       removed[t] = sql.prepare(`DELETE FROM "${t}" WHERE rowid IN (${r.map(() => "?").join(",")})`).run(...r).changes;
     }
