@@ -1,13 +1,10 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
   CalendarCheck, CalendarClock, CircleAlert, DollarSign, Users,
   Plus, TrendingUp, TrendingDown, Home, ClipboardList, Receipt,
 } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-} from "recharts";
 import type { Customer, Job, Invoice, Staff, Property } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,16 +14,14 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { formatMoney, formatDate, initials } from "@/lib/format";
+import { revenueBy, type RevenuePeriod } from "@/lib/revenue";
+import { PeriodToggle, RevenueBars } from "@/components/revenue-chart";
 
 interface DashboardPageProps {
   onNewCustomer: () => void;
   onNewProperty: () => void;
 }
 
-function monthLabel(key: string): string {
-  const [y, m] = key.split("-");
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", { month: "short" });
-}
 
 export default function DashboardPage({ onNewCustomer, onNewProperty }: DashboardPageProps) {
   const [, navigate] = useLocation();
@@ -42,6 +37,12 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
 
   const today = new Date().toISOString().slice(0, 10);
 
+  const [revenuePeriod, setRevenuePeriod] = useState<RevenuePeriod>("month");
+  const revenueTrend = useMemo(
+    () => revenueBy(invoices, revenuePeriod, revenuePeriod === "week" ? 8 : 6),
+    [invoices, revenuePeriod],
+  );
+
   const kpis = useMemo(() => {
     const todaysJobs = jobs.filter((j) => j.scheduledDate === today);
     const next7 = new Date();
@@ -53,28 +54,13 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
     const overdueInvoices = invoices.filter((i) => i.status === "overdue");
     const overdueTotal = overdueInvoices.reduce((sum, i) => sum + (i.total - i.amountPaid), 0);
 
-    const thisMonthKey = today.slice(0, 7);
-    const lastMonthDate = new Date();
-    lastMonthDate.setMonth(lastMonthDate.getMonth() - 1);
-    const lastMonthKey = lastMonthDate.toISOString().slice(0, 7);
-
-    const revenueForMonth = (key: string) =>
-      invoices.filter((i) => i.issueDate.startsWith(key)).reduce((sum, i) => sum + i.total, 0);
-
-    const monthlyRevenue = revenueForMonth(thisMonthKey);
-    const lastMonthRevenue = revenueForMonth(lastMonthKey);
+    // Same rule as the revenue charts: invoice totals by issue date, canceled excluded.
+    const [lastMonth, thisMonth] = revenueBy(invoices, "month", 2);
+    const monthlyRevenue = thisMonth.revenue;
+    const lastMonthRevenue = lastMonth.revenue;
     const delta = lastMonthRevenue > 0
       ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
       : monthlyRevenue > 0 ? 100 : 0;
-
-    // Revenue by month for the trailing 6 months (real invoice data).
-    const revenueTrend: Array<{ month: string; revenue: number }> = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date();
-      d.setMonth(d.getMonth() - i);
-      const key = d.toISOString().slice(0, 7);
-      revenueTrend.push({ month: monthLabel(key), revenue: Math.round(revenueForMonth(key) * 100) / 100 });
-    }
 
     return {
       todaysJobsCount: todaysJobs.length,
@@ -84,7 +70,6 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       monthlyRevenue,
       revenueDelta: delta,
       activeCustomers: customers.length,
-      revenueTrend,
       hasAnyInvoices: invoices.length > 0,
     };
   }, [jobs, invoices, customers, today]);
@@ -326,29 +311,14 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
         title="Double-click to view reports"
         data-testid="card-dashboard-revenue-trend"
       >
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Revenue by Month</CardTitle>
+        <CardHeader className="flex-row items-center justify-between gap-2 pb-3">
+          <CardTitle className="text-base">Revenue by {revenuePeriod === "week" ? "Week" : "Month"}</CardTitle>
+          <div onDoubleClick={(e) => e.stopPropagation()}>
+            <PeriodToggle value={revenuePeriod} onChange={setRevenuePeriod} testId="toggle-dashboard-revenue-period" />
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="h-[220px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={kpis.revenueTrend}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
-                <YAxis tickLine={false} axisLine={false} fontSize={12} width={36} />
-                <Tooltip
-                  formatter={(v: number) => formatMoney(v as number)}
-                  contentStyle={{
-                    borderRadius: 8,
-                    fontSize: 12,
-                    background: "hsl(var(--popover))",
-                    border: "1px solid hsl(var(--border))",
-                  }}
-                />
-                <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <RevenueBars data={revenueTrend} height={220} />
           {!kpis.hasAnyInvoices && (
             <p className="mt-2 text-xs text-muted-foreground" data-testid="text-revenue-note">
               No invoices recorded yet — the chart will populate as invoices are created.

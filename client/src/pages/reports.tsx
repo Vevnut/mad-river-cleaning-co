@@ -1,10 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Download, BarChart3 } from "lucide-react";
-import {
-  BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid,
-} from "recharts";
 import type { Job, Invoice, Customer, Property, Schedule, Staff } from "@shared/schema";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,6 +12,8 @@ import {
 } from "@/components/ui/table";
 import { formatMoney, formatDate } from "@/lib/format";
 import { exportRowsToCsv } from "@/lib/csv-export";
+import { revenueBy, type RevenuePeriod } from "@/lib/revenue";
+import { PeriodToggle, RevenueBars } from "@/components/revenue-chart";
 
 const FREQUENCY_LABEL: Record<string, string> = {
   weekly: "Weekly",
@@ -23,14 +22,7 @@ const FREQUENCY_LABEL: Record<string, string> = {
   custom: "Custom",
 };
 
-function monthKey(dateStr: string): string {
-  return dateStr.slice(0, 7); // YYYY-MM
-}
 
-function monthLabel(key: string): string {
-  const [y, m] = key.split("-");
-  return new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
-}
 
 export default function ReportsPage() {
   const { data: jobs = [], isLoading: jobsLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
@@ -45,16 +37,11 @@ export default function ReportsPage() {
   const propertyById = (id: number) => properties.find((p) => p.id === id);
   const staffById = (id: number | null) => staffList.find((s) => s.id === id);
 
-  // --- Revenue by month (from paid + partial invoice amountPaid, plus total for sent/overdue as booked revenue) ---
-  const revenueByMonth = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const inv of invoices) {
-      const key = monthKey(inv.issueDate);
-      map.set(key, (map.get(key) ?? 0) + inv.total);
-    }
-    const keys = Array.from(map.keys()).sort();
-    return keys.map((k) => ({ month: monthLabel(k), key: k, revenue: Math.round(map.get(k)! * 100) / 100 }));
-  }, [invoices]);
+  // --- Revenue by month or week (invoice totals by issue date; canceled invoices excluded) ---
+  const [period, setPeriod] = useState<RevenuePeriod>("month");
+  const revenueRows = useMemo(() => revenueBy(invoices, period), [invoices, period]);
+  const chartRows = period === "week" ? revenueRows.slice(-26) : revenueRows.slice(-24);
+  const periodName = period === "week" ? "Week" : "Month";
 
   // --- Jobs by property ---
   const jobsByProperty = useMemo(() => {
@@ -112,44 +99,68 @@ export default function ReportsPage() {
     <div className="space-y-6 p-4 md:p-6">
       <h1 className="text-xl font-semibold" data-testid="text-page-title">Reports</h1>
 
-      {/* Revenue by month */}
+      {/* Revenue by month or week */}
       <Card>
-        <CardHeader className="pb-3 flex-row items-center justify-between">
-          <CardTitle className="text-base">Revenue by Month</CardTitle>
-          <Button
-            size="sm"
-            variant="outline"
-            className="gap-1.5"
-            onClick={() => exportRowsToCsv("revenue-by-month.csv", ["Month", "Revenue"], revenueByMonth.map((r) => [r.month, r.revenue.toFixed(2)]))}
-            disabled={revenueByMonth.length === 0}
-            data-testid="button-export-revenue-csv"
-          >
-            <Download className="h-3.5 w-3.5" /> Export CSV
-          </Button>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 pb-3">
+          <CardTitle className="text-base" data-testid="text-revenue-title">Revenue by {periodName}</CardTitle>
+          <div className="flex items-center gap-2">
+            <PeriodToggle value={period} onChange={setPeriod} testId="toggle-revenue-period" />
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => exportRowsToCsv(
+                `revenue-by-${period}.csv`,
+                period === "week" ? ["Week", "Revenue", "Invoices"] : ["Month", "Revenue", "Invoices"],
+                revenueRows.map((r) => [r.range, r.revenue.toFixed(2), r.invoices]),
+              )}
+              disabled={revenueRows.length === 0}
+              data-testid="button-export-revenue-csv"
+            >
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {isLoading ? (
             <Skeleton className="h-[220px] w-full" />
-          ) : revenueByMonth.length === 0 ? (
+          ) : revenueRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground" data-testid="empty-revenue-chart">
               <BarChart3 className="h-6 w-6" />
               <p className="text-sm">No invoice data yet.</p>
             </div>
           ) : (
-            <div className="h-[240px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={revenueByMonth}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" />
-                  <XAxis dataKey="month" tickLine={false} axisLine={false} fontSize={12} />
-                  <YAxis tickLine={false} axisLine={false} fontSize={12} width={48} />
-                  <Tooltip
-                    formatter={(v: number) => formatMoney(v)}
-                    contentStyle={{ borderRadius: 8, fontSize: 12, background: "hsl(var(--popover))", border: "1px solid hsl(var(--border))" }}
-                  />
-                  <Bar dataKey="revenue" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <RevenueBars data={chartRows} />
+              {revenueRows.length > chartRows.length && (
+                <p className="text-xs text-muted-foreground">
+                  Chart shows the last {chartRows.length} {period === "week" ? "weeks" : "months"}. The table and CSV include everything.
+                </p>
+              )}
+              <div className="max-h-72 overflow-auto rounded-md border">
+                <Table data-testid="table-revenue-periods">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{periodName}</TableHead>
+                      <TableHead className="hidden text-right sm:table-cell">Invoices</TableHead>
+                      <TableHead className="text-right">Revenue</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...revenueRows].reverse().map((r) => (
+                      <TableRow key={r.key} data-testid={`row-revenue-${r.key}`}>
+                        <TableCell className="whitespace-nowrap text-sm">{r.range}</TableCell>
+                        <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{r.invoices}</TableCell>
+                        <TableCell className="whitespace-nowrap text-right text-sm font-medium tabular-nums">{formatMoney(r.revenue)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Invoice totals by issue date. Weeks run Monday to Sunday. Canceled invoices are not counted.
+              </p>
+            </>
           )}
         </CardContent>
       </Card>
