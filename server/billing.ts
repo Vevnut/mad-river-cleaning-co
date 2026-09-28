@@ -398,15 +398,25 @@ export function registerBilling(app: Express) {
     update("invoices", inv.id, { status: "canceled", publicEnabled: 0, updatedAt: now() });
     activity(inv.id, "voided", {}, res.locals.user.email); res.json(invoice(inv.id));
   });
-  app.delete("/api/invoices/:id", (req, res) => {
+  app.delete("/api/invoices/:id", () => fail(409, "Use Delete invoice on the invoice page. Deleting takes three confirmation steps."));
+  app.post("/api/invoices/:id/delete", (req, res) => {
     const inv = invoice(Number(req.params.id)); assertUnlocked(inv.id);
-    if (inv.status !== "draft" || inv.amountPaid > 0) fail(409, "Only unpaid drafts can be deleted. Void a sent invoice to retain its history.");
+    const body = z.object({ confirmInvoiceNumber: z.string().max(100), understood: z.literal(true) }).safeParse(req.body);
+    if (!body.success || body.data.confirmInvoiceNumber.trim().toUpperCase() !== String(inv.invoiceNumber).toUpperCase())
+      fail(400, `Type ${inv.invoiceNumber} exactly and confirm you understand to delete this invoice.`);
+    const pays = rows("payments", "invoice_id=?", inv.id);
+    if (pays.some((p: any) => (p.provider || "manual") !== "manual"))
+      fail(409, "This invoice has an online card payment. Refund it in Stripe first; card payments can't be deleted here.");
     sql.transaction(() => {
-      sql.prepare("DELETE FROM invoice_activity WHERE invoice_id=?").run(inv.id);
-      sql.prepare("DELETE FROM invoice_items WHERE invoice_id=?").run(inv.id);
+      const snapshot = { invoice: rows("invoices", "id=?", inv.id)[0], items: rows("invoice_items", "invoice_id=?", inv.id), payments: pays,
+        activity: rows("invoice_activity", "invoice_id=?", inv.id), sends: rows("invoice_sends", "invoice_id=?", inv.id),
+        checkouts: rows("checkout_sessions", "invoice_id=?", inv.id) };
+      insert("deleted_invoices", { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, snapshot: JSON.stringify(snapshot), deletedBy: res.locals.user.email, deletedAt: now() });
+      for (const t of ["invoice_activity", "invoice_items", "payments", "invoice_sends", "checkout_sessions"]) sql.prepare(`DELETE FROM ${t} WHERE invoice_id=?`).run(inv.id);
       sql.prepare("DELETE FROM invoices WHERE id=?").run(inv.id);
-      if (inv.jobId) update("jobs", inv.jobId, { status: "completed" });
-    })(); res.sendStatus(204);
+      if (inv.jobId && !rows("invoices", "job_id=? AND status!='canceled'", inv.jobId).length) update("jobs", inv.jobId, { status: "completed" });
+    })();
+    res.json({ deleted: inv.invoiceNumber });
   });
   app.get("/api/payments", (req, res) => res.json(req.query.invoiceId ? rows("payments", "invoice_id=?", Number(req.query.invoiceId)) : rows("payments")));
   app.get("/api/invoices/:id/payments", (req, res) => { invoice(Number(req.params.id)); res.json(rows("payments", "invoice_id=?", Number(req.params.id))); });

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -11,7 +11,8 @@ import { StatusBadge } from "@/components/status-badge";
 import { Field, Choice, rateOptions } from "@/components/billing-fields";
 import { InvoicePreview } from "@/pages/public-invoice";
 import { formatMoney, businessDate } from "@/lib/format";
-import { ArrowLeft, Send, Printer, Plus } from "lucide-react";
+import { DeleteInvoiceDialog } from "@/components/invoices/delete-invoice-dialog";
+import { ArrowLeft, Send, Printer, Plus, Trash2 } from "lucide-react";
 
 const methods = [["cash", "Cash"], ["check", "Check"], ["venmo", "Venmo"], ["zelle", "Zelle"], ["bank_transfer", "Bank transfer"], ["manual_card", "Card processed manually"], ["other", "Other"]].map(([value, label]) => ({ value, label }));
 export default function InvoiceDetailPage() {
@@ -19,6 +20,8 @@ export default function InvoiceDetailPage() {
   const endpoint = `/api/invoices/${id}`;
   const [modal, setModal] = useState(""), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [send, setSend] = useState<any>({}), [payment, setPayment] = useState<any>({});
+  const [deleting, setDeleting] = useState(() => sessionStorage.getItem("open-delete-invoice") === id);
+  useEffect(() => { sessionStorage.removeItem("open-delete-invoice"); }, []);
   const { data: inv, error: loadError } = useQuery<any>({ queryKey: ["/api/invoices", Number(id)], queryFn: async () => (await apiRequest("GET", endpoint)).json(), staleTime: 0 });
   const { data: items = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "items"], queryFn: async () => (await apiRequest("GET", `${endpoint}/items`)).json() });
   const { data: payments = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", Number(id), "payments"], queryFn: async () => (await apiRequest("GET", `${endpoint}/payments`)).json() });
@@ -75,7 +78,12 @@ export default function InvoiceDetailPage() {
       {!history.length && <p className="text-sm text-muted-foreground">Historical invoice. Activity tracking starts with this upgrade.</p>}
       {history.map(h => { const d = JSON.parse(h.details); return <div key={h.id} className="text-sm border-b pb-3"><p className="capitalize font-medium">{h.activityType.replaceAll("_", " ")}</p><p className="text-xs text-muted-foreground">{new Date(h.createdAt).toLocaleString()} · {h.actor}</p>{d.recipient && <p className="text-xs mt-1">To: {d.recipient} {d.subject && `· ${d.subject}`}</p>}{d.message && <p className="text-xs whitespace-pre-wrap mt-1">{d.message}</p>}{d.amount != null && <p className="text-xs">{formatMoney(d.amount)}</p>}</div>; })}
     </CardContent></Card>
-    {!inv.amountPaid && inv.status !== "canceled" && <Button variant="ghost" onClick={() => { setError(""); setModal("void"); }}>Void / cancel invoice</Button>}
+    <div className="flex flex-wrap gap-2 border-t pt-4">
+      {!inv.amountPaid && inv.status !== "canceled" && <Button variant="ghost" onClick={() => { setError(""); setModal("void"); }}>Void / cancel invoice</Button>}
+      <Button variant="ghost" className="text-destructive hover:text-destructive" onClick={() => setDeleting(true)} data-testid="button-delete-invoice"><Trash2 className="h-4 w-4 mr-2" />Delete invoice</Button>
+    </div>
+    <DeleteInvoiceDialog open={deleting} onOpenChange={setDeleting} inv={inv} customerName={customer?.companyName || customer?.name || `Customer #${inv.customerId}`}
+      itemCount={items.length} payments={payments} onVoidInstead={!inv.amountPaid && inv.status !== "canceled" ? () => { setError(""); setModal("void"); } : undefined} />
     {error && !modal && <p role="alert" className="text-destructive text-sm">{error}</p>}
     <Dialog open={!!modal} onOpenChange={v => !v && !busy && setModal("")}><DialogContent className={modal === "preview" || modal === "send" ? "max-w-3xl max-h-[90vh] overflow-y-auto" : "max-w-lg max-h-[90vh] overflow-y-auto"}>
       <DialogHeader><DialogTitle>{modal === "send" ? "Review & send invoice" : modal === "payment" ? "Record Payment" : modal === "void" ? "Void this invoice?" : "Client invoice preview"}</DialogTitle>

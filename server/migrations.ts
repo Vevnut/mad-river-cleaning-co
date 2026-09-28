@@ -124,4 +124,13 @@ export function migrate(sql: Database.Database) {
       sql.prepare("INSERT INTO schema_migrations VALUES (5,?)").run(new Date().toISOString());
     })();
   }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=6").get()) {
+    sql.transaction(() => {
+      // A full copy of every deleted invoice, so a mistake can be restored by an administrator.
+      sql.exec(`CREATE TABLE IF NOT EXISTS deleted_invoices (
+        id INTEGER PRIMARY KEY, invoice_id INTEGER NOT NULL, invoice_number TEXT NOT NULL,
+        snapshot TEXT NOT NULL, deleted_by TEXT NOT NULL, deleted_at TEXT NOT NULL)`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (6,?)").run(new Date().toISOString());
+    })();
+  }
 }

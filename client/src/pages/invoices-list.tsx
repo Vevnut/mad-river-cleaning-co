@@ -15,15 +15,9 @@ import {
 import {
   ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { formatMoney, formatDate } from "@/lib/format";
 import { exportRowsToCsv } from "@/lib/csv-export";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest, queryClient } from "@/lib/queryClient";
 
 const INVOICE_STATUSES = ["draft", "sent", "viewed", "paid", "partial", "overdue", "canceled"] as const;
 
@@ -33,9 +27,7 @@ export default function InvoicesListPage() {
   const [customerFilter, setCustomerFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<Invoice | null>(null);
   const [, navigate] = useLocation();
-  const { toast } = useToast();
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({ queryKey: ["/api/invoices"] });
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
@@ -58,19 +50,6 @@ export default function InvoicesListPage() {
       })
       .sort((a, b) => b.issueDate.localeCompare(a.issueDate));
   }, [invoices, statusFilter, customerFilter, dateFrom, dateTo, search, customers]);
-
-  const handleDelete = async () => {
-    if (!deleteTarget) return;
-    try {
-      await apiRequest("DELETE", `/api/invoices/${deleteTarget.id}`);
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({ title: "Invoice deleted" });
-    } catch (err) {
-      toast({ title: "Couldn't delete invoice", description: (err as Error).message, variant: "destructive" });
-    } finally {
-      setDeleteTarget(null);
-    }
-  };
 
   function handleExport() {
     exportRowsToCsv(
@@ -224,11 +203,10 @@ export default function InvoicesListPage() {
                       </ContextMenuItem>
                       <ContextMenuItem
                         data-testid={`contextmenuitem-delete-${inv.id}`}
-                        disabled={inv.status !== "draft" || inv.amountPaid > 0}
                         className="text-destructive"
-                        onClick={() => setDeleteTarget(inv)}
+                        onClick={() => { sessionStorage.setItem("open-delete-invoice", String(inv.id)); navigate(`/invoices/${inv.id}`); }}
                       >
-                        Delete
+                        Delete…
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
@@ -239,22 +217,6 @@ export default function InvoicesListPage() {
         </div>
       )}
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete invoice?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently remove invoice {deleteTarget?.invoiceNumber}. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel data-testid="button-cancel-delete-invoice">Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} data-testid="button-confirm-delete-invoice">
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

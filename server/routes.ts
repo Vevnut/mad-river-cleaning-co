@@ -648,11 +648,7 @@ export async function registerRoutes(
     res.json(invoice);
   });
 
-  app.delete("/api/invoices/:id", async (req, res) => {
-    const ok = await storage.deleteInvoice(Number(req.params.id));
-    if (!ok) return res.status(404).json({ message: "Invoice not found" });
-    res.status(204).send();
-  });
+  // Invoice deletion lives in billing.ts (three-step confirmation, archived copy).
 
   // =========================================================================
   // Invoice items — full CRUD (Phase 3). Mutations recompute the parent
