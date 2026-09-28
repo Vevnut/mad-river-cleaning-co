@@ -11,6 +11,8 @@ npm run check     # TypeScript check — must pass before committing
 npm run build     # production build to dist/
 npx tsx tests/common-services.test.ts   # service catalog / invoice regression tests
 npx tsx tests/providers.test.ts         # auth, Stripe and email tests (all mocked)
+npx tsx tests/job-photos.test.ts        # Damage / Final Walkthrough photo uploads
+npx tsx tests/revenue.test.ts           # monthly and weekly revenue totals
 ```
 
 ## Layout
@@ -22,11 +24,12 @@ npx tsx tests/providers.test.ts         # auth, Stripe and email tests (all mock
 
 ## Rules
 
-- **Business data is not in this repository.** `data.db`, backups and `.env` are ignored and must never be committed.
+- **Business data is not in this repository.** `data.db`, backups, `uploads/` (job photos) and `.env` are ignored and must never be committed.
 - **Database changes are additive only.** Add a new numbered block to `server/migrations.ts`. Never drop tables, rebuild tables or run `drizzle-kit push` against real data.
 - **Every `/api` route except sign-in, public invoice links and the Stripe webhook requires sign-in.** Keep new private routes behind the `protect()` gate in `server/auth.ts`.
 - **Secrets stay server-side.** Stripe and email keys come from environment variables only (see `.env.example`).
 - **API URLs in the frontend use the `__PORT_5000__` placeholder.** The hosting platform rewrites it; don't replace it with a hard-coded URL.
+- Revenue is invoice totals by issue date, excluding canceled invoices; weeks run Monday to Sunday (`client/src/lib/revenue.ts`).
 - Invoices keep the prices saved on them. Changing a service or property price must never change existing invoices.
 
 ## Where the app runs
