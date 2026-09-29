@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Plus, Search, Home, MoreHorizontal } from "lucide-react";
 import type { Property, Customer } from "@shared/schema";
+import { bedSummary, totalBeds } from "@shared/beds";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -166,7 +167,7 @@ export default function PropertiesListPage() {
                       <TableCell>
                         <Badge variant="outline" className="capitalize">{p.unitType}</Badge>
                       </TableCell>
-                      <TableCell className="tabular-nums">{p.bedrooms}bd / {p.bathrooms}ba</TableCell>
+                      <TableCell className="tabular-nums whitespace-nowrap">{p.bedrooms}bd / {p.bathrooms}ba{totalBeds(p) > 0 && <span className="block text-xs text-muted-foreground" title={bedSummary(p)} data-testid={`text-beds-${p.id}`}>{totalBeds(p)} {totalBeds(p) === 1 ? "bed" : "beds"}</span>}</TableCell>
                       <TableCell>
                         <Badge variant="secondary" className="capitalize">{p.cleaningFrequency}</Badge>
                       </TableCell>

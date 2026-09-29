@@ -105,3 +105,27 @@ export function profitBy(invoices: Invoice[], expenses: ExpenseLike[], period: R
     (a, r) => { if (r.kind === "inv") a.revenue += r.amount; else a.expenses += r.amount; }, period, last, today)
     .map(b => ({ ...b, revenue: cents(b.revenue), expenses: cents(b.expenses), profit: cents(b.revenue - b.expenses) }));
 }
+
+export type YearToDate = { year: number; from: string; to: string; revenue: number; invoices: number; lastYear: number; delta: number | null };
+
+/**
+ * Revenue from Jan 1 through today (by invoice issue date, canceled excluded),
+ * compared with the same stretch of last year. `todayIso` is a YYYY-MM-DD business date.
+ */
+export function yearToDate(invoices: Invoice[], todayIso: string): YearToDate {
+  const year = Number(todayIso.slice(0, 4));
+  const from = `${year}-01-01`;
+  const lastFrom = `${year - 1}-01-01`;
+  // Same calendar day last year (Feb 29 falls back to Feb 28).
+  const md = todayIso.slice(5, 10) === "02-29" ? "02-28" : todayIso.slice(5, 10);
+  const lastTo = `${year - 1}-${md}`;
+  let revenue = 0, count = 0, lastYear = 0;
+  for (const inv of invoices) {
+    if (!counts(inv) || !inv.issueDate) continue;
+    const d = inv.issueDate.slice(0, 10);
+    if (d >= from && d <= todayIso) { revenue += inv.total; count++; }
+    else if (d >= lastFrom && d <= lastTo) lastYear += inv.total;
+  }
+  revenue = cents(revenue); lastYear = cents(lastYear);
+  return { year, from, to: todayIso, revenue, invoices: count, lastYear, delta: lastYear > 0 ? Math.round(((revenue - lastYear) / lastYear) * 100) : null };
+}

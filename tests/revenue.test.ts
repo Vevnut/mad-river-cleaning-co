@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { revenueBy, expensesBy, profitBy, weekStart } from "../client/src/lib/revenue";
+import { revenueBy, expensesBy, profitBy, weekStart, yearToDate } from "../client/src/lib/revenue";
 const inv = (issueDate: string, total: number, status = "paid") => ({ issueDate, total, status }) as any;
 let n = 0; const check = (m: string, f: () => void) => { f(); n++; console.log("PASS " + m); };
 const today = new Date(2026, 8, 28); // Mon Sep 28 2026
@@ -38,4 +38,9 @@ check("profit is revenue minus expenses, skipping canceled invoices", () => {
   const m = profitBy(data, ex, "month", undefined, today);
   assert.deepEqual(m.map(x => [x.key, x.revenue, x.expenses, x.profit]), [["2026-08-01", 20, 0, 20], ["2026-09-01", 650, 68.65, 581.35]]);
 });
+check("year to date counts Jan 1 through today and compares with the same point last year", () => {
+  const y = yearToDate([inv("2026-01-01", 100), inv("2026-09-28", 50), inv("2026-09-29", 999), inv("2026-05-01", 70, "canceled"), inv("2025-09-28", 60), inv("2025-09-29", 500), inv("2024-12-31", 5)], "2026-09-28");
+  assert.deepEqual([y.revenue, y.invoices, y.lastYear, y.delta], [150, 2, 60, 150]);
+});
+check("year to date with no history last year has no comparison", () => assert.equal(yearToDate([inv("2026-02-01", 10)], "2026-03-01").delta, null));
 console.log(`${n} revenue checks passed.`);

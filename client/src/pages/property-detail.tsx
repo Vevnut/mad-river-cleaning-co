@@ -6,6 +6,7 @@ import {
   Pencil, ImagePlus, ClipboardList, Building2,
 } from "lucide-react";
 import type { Property, Customer, Job } from "@shared/schema";
+import { bedSummary, totalBeds } from "@shared/beds";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -130,6 +131,10 @@ export default function PropertyDetailPage() {
             <div className="flex items-center gap-2">
               <BedDouble className="h-4 w-4 text-muted-foreground" />
               <span className="tabular-nums">{property.bedrooms} bedrooms</span>
+            </div>
+            <div className="col-span-2 flex items-start gap-2" data-testid="text-property-beds">
+              <BedDouble className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="tabular-nums">{totalBeds(property) ? `${totalBeds(property)} ${totalBeds(property) === 1 ? "bed" : "beds"}: ${bedSummary(property)}` : <span className="text-muted-foreground">Beds not recorded yet. Edit the property to add them.</span>}</span>
             </div>
             <div className="flex items-center gap-2">
               <Bath className="h-4 w-4 text-muted-foreground" />

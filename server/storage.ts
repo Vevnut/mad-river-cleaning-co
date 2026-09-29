@@ -395,6 +395,9 @@ export class DatabaseStorage implements IStorage {
     db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
     db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
     sqlite.prepare("UPDATE expenses SET job_id=NULL WHERE job_id=?").run(id);
+    // Subcontractor payments are money records: keep them, just unlink the job.
+    sqlite.prepare("UPDATE subcontractor_payments SET job_id=NULL WHERE job_id=?").run(id);
+    sqlite.prepare("DELETE FROM job_subcontractors WHERE job_id=?").run(id);
     return db.delete(jobs).where(eq(jobs.id, id)).run().changes > 0;
   }
 

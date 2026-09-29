@@ -154,4 +154,33 @@ export function migrate(sql: Database.Database) {
       sql.prepare("INSERT INTO schema_migrations VALUES (7,?)").run(new Date().toISOString());
     })();
   }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=8").get()) {
+    sql.transaction(() => {
+      // Bed counts by type on each property.
+      const cols = new Set((sql.prepare("PRAGMA table_info(properties)").all() as any[]).map(c => c.name));
+      for (const c of ["bed_king", "bed_queen", "bed_full", "bed_twin", "bed_bunk", "bed_sofa"])
+        if (!cols.has(c)) sql.exec(`ALTER TABLE properties ADD COLUMN ${c} INTEGER NOT NULL DEFAULT 0`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (8,?)").run(new Date().toISOString());
+    })();
+  }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=9").get()) {
+    sql.transaction(() => {
+      // Subcontractors: who they are, which jobs they did, and what they were paid.
+      sql.exec(`CREATE TABLE IF NOT EXISTS subcontractors (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, business_name TEXT, email TEXT, phone TEXT, services TEXT,
+        pay_type TEXT NOT NULL DEFAULT 'per_job' CHECK(pay_type IN ('per_job','hourly')), default_pay REAL,
+        w9_on_file INTEGER NOT NULL DEFAULT 0, insurance_expires TEXT, notes TEXT,
+        active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS job_subcontractors (
+        job_id INTEGER PRIMARY KEY REFERENCES jobs(id), subcontractor_id INTEGER NOT NULL REFERENCES subcontractors(id),
+        pay REAL NOT NULL CHECK(pay >= 0), assigned_at TEXT NOT NULL, assigned_by TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS job_subcontractors_sub ON job_subcontractors(subcontractor_id);
+        CREATE TABLE IF NOT EXISTS subcontractor_payments (
+        id INTEGER PRIMARY KEY, subcontractor_id INTEGER NOT NULL REFERENCES subcontractors(id),
+        paid_date TEXT NOT NULL, amount REAL NOT NULL CHECK(amount > 0), method TEXT, reference TEXT,
+        job_id INTEGER REFERENCES jobs(id), note TEXT, created_at TEXT NOT NULL, created_by TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS subcontractor_payments_sub ON subcontractor_payments(subcontractor_id, paid_date);`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (9,?)").run(new Date().toISOString());
+    })();
+  }
 }

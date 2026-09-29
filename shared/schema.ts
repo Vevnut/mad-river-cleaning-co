@@ -79,6 +79,12 @@ export const properties = sqliteTable("properties", {
   ownerRateName: text("owner_rate_name"),
   invoiceNotes: text("invoice_notes"),
   maxOccupancy: integer("max_occupancy").notNull(),
+  bedKing: integer("bed_king").notNull().default(0),
+  bedQueen: integer("bed_queen").notNull().default(0),
+  bedFull: integer("bed_full").notNull().default(0),
+  bedTwin: integer("bed_twin").notNull().default(0),
+  bedBunk: integer("bed_bunk").notNull().default(0),
+  bedSofa: integer("bed_sofa").notNull().default(0),
   checkInTime: text("check_in_time").notNull(),
   checkOutTime: text("check_out_time").notNull(),
   entryInstructions: text("entry_instructions").notNull(),
@@ -92,7 +98,9 @@ export const properties = sqliteTable("properties", {
   active: integer("active", { mode: "boolean" }).notNull().default(true),
 });
 
+const bedCount = z.number().int().min(0).max(50).optional();
 export const insertPropertySchema = createInsertSchema(properties).omit({ id: true, legacyTotalBathrooms: true }).extend({
+  bedKing: bedCount, bedQueen: bedCount, bedFull: bedCount, bedTwin: bedCount, bedBunk: bedCount, bedSofa: bedCount,
   bathrooms: z.number().min(0), basePrice: z.number().min(0),
   fullBathrooms: z.number().int().min(0).nullable().optional(),
   halfBathrooms: z.number().int().min(0).nullable().optional(),

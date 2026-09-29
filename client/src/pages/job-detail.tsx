@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/tooltip";
 import { formatMoney, formatDate } from "@/lib/format";
 import { JobPhotos } from "@/components/jobs/job-photos";
+import { JobSubcontractor } from "@/components/jobs/job-subcontractor";
 
 const STATUS_ORDER: Job["status"][] = ["scheduled", "in_progress", "completed", "invoiced"];
 const STATUS_LABELS: Record<Job["status"], string> = {
@@ -479,6 +480,8 @@ export default function JobDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      <JobSubcontractor jobId={job.id} jobPrice={job.price} />
 
       {/* Damage and final walkthrough photos (private to the workspace) */}
       <JobPhotos

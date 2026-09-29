@@ -13,8 +13,8 @@ import { StatusBadge } from "@/components/status-badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { formatMoney, formatDate, initials } from "@/lib/format";
-import { revenueBy, type RevenuePeriod } from "@/lib/revenue";
+import { businessDate, formatMoney, formatDate, initials } from "@/lib/format";
+import { revenueBy, yearToDate, type RevenuePeriod } from "@/lib/revenue";
 import { PeriodToggle, RevenueBars } from "@/components/revenue-chart";
 
 interface DashboardPageProps {
@@ -62,7 +62,10 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100)
       : monthlyRevenue > 0 ? 100 : 0;
 
+    const ytd = yearToDate(invoices, businessDate());
+
     return {
+      ytd,
       todaysJobsCount: todaysJobs.length,
       upcomingCount: upcoming.length,
       overdueCount: overdueInvoices.length,
@@ -101,7 +104,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
       </div>
 
       {/* KPI cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <KpiCard
           icon={CalendarCheck}
           label="Today's Jobs"
@@ -135,6 +138,17 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           delta={kpis.revenueDelta}
           loading={isLoading}
           testId="monthly-revenue"
+          to="/reports"
+        />
+        <KpiCard
+          icon={DollarSign}
+          label="Revenue YTD"
+          value={formatMoney(kpis.ytd.revenue)}
+          subValue={kpis.ytd.delta === null ? `${kpis.ytd.invoices} invoice${kpis.ytd.invoices === 1 ? "" : "s"} since Jan 1` : undefined}
+          delta={kpis.ytd.delta ?? undefined}
+          deltaLabel={`vs ${kpis.ytd.year - 1} YTD`}
+          loading={isLoading}
+          testId="ytd-revenue"
           to="/reports"
         />
         <KpiCard
@@ -336,6 +350,7 @@ function KpiCard({
   value,
   subValue,
   delta,
+  deltaLabel = "vs last month",
   loading,
   tone,
   testId,
@@ -346,6 +361,7 @@ function KpiCard({
   value: string | number;
   subValue?: string;
   delta?: number;
+  deltaLabel?: string;
   loading?: boolean;
   tone?: "overdue";
   testId: string;
@@ -377,7 +393,7 @@ function KpiCard({
         {typeof delta === "number" && !loading && (
           <p className={`flex items-center gap-1 text-xs ${delta >= 0 ? "text-status-paid" : "text-status-overdue"}`}>
             {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-            {delta === 0 ? "No change vs last month" : `${Math.abs(delta)}% vs last month`}
+            {delta === 0 ? `No change ${deltaLabel}` : `${Math.abs(delta)}% ${deltaLabel}`}
           </p>
         )}
       </CardContent>

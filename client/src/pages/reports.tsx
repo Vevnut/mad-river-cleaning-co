@@ -10,10 +10,11 @@ import { StatusBadge } from "@/components/status-badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatMoney, formatDate, businessDate } from "@/lib/format";
 import { exportRowsToCsv } from "@/lib/csv-export";
-import { revenueBy, profitBy, type RevenuePeriod } from "@/lib/revenue";
+import { revenueBy, profitBy, yearToDate, type RevenuePeriod } from "@/lib/revenue";
 import type { Expense } from "@shared/expenses";
+import type { SubPayment } from "@shared/subcontractors";
 import { PeriodToggle, RevenueBars } from "@/components/revenue-chart";
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -34,6 +35,9 @@ export default function ReportsPage() {
   const { data: staffList = [] } = useQuery<Staff[]>({ queryKey: ["/api/staff"] });
 
   const { data: expenses = [] } = useQuery<Expense[]>({ queryKey: ["/api/expenses"] });
+  const { data: subPayments = [] } = useQuery<SubPayment[]>({ queryKey: ["/api/subcontractor-payments"] });
+  // Costs = mileage + supplies + subcontractor payments (by date paid).
+  const costs = useMemo(() => [...expenses, ...subPayments.map(p => ({ expenseDate: p.paidDate, kind: "supply" as const, amount: p.amount, totalMiles: null }))], [expenses, subPayments]);
   const isLoading = jobsLoading || invoicesLoading;
   const customerById = (id: number) => customers.find((c) => c.id === id);
   const propertyById = (id: number) => properties.find((p) => p.id === id);
@@ -44,12 +48,16 @@ export default function ReportsPage() {
   const revenueRows = useMemo(() => revenueBy(invoices, period), [invoices, period]);
   const chartRows = period === "week" ? revenueRows.slice(-26) : revenueRows.slice(-24);
   const periodName = period === "week" ? "Week" : "Month";
+  const today = businessDate();
+  const ytd = useMemo(() => yearToDate(invoices, today), [invoices, today]);
+  const ytdLabel = `Jan 1 – ${formatDate(today).replace(/, \d{4}$/, "")}`;
 
   // --- Revenue, expenses and profit by month or week ---
   const [profitPeriod, setProfitPeriod] = useState<RevenuePeriod>("month");
-  const profitRows = useMemo(() => profitBy(invoices, expenses, profitPeriod), [invoices, expenses, profitPeriod]);
+  const profitRows = useMemo(() => profitBy(invoices, costs, profitPeriod), [invoices, costs, profitPeriod]);
   const profitTotals = profitRows.reduce((a, r) => ({ revenue: a.revenue + r.revenue, expenses: a.expenses + r.expenses }), { revenue: 0, expenses: 0 });
   const profitName = profitPeriod === "week" ? "Week" : "Month";
+  const ytdCosts = Math.round(costs.filter(c => c.expenseDate >= ytd.from && c.expenseDate <= today).reduce((n, c) => n + c.amount, 0) * 100) / 100;
 
   // --- Jobs by property ---
   const jobsByProperty = useMemo(() => {
@@ -130,6 +138,27 @@ export default function ReportsPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
+          {!isLoading && (
+            <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3" data-testid="section-revenue-ytd">
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Year to date · {ytdLabel}, {ytd.year}</p>
+                <p className="text-lg font-semibold tabular-nums" data-testid="text-revenue-ytd">{formatMoney(ytd.revenue)}</p>
+                <p className="text-xs text-muted-foreground">{ytd.invoices} invoice{ytd.invoices === 1 ? "" : "s"}</p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Same stretch of {ytd.year - 1}</p>
+                <p className="text-lg font-semibold tabular-nums" data-testid="text-revenue-ytd-last-year">{formatMoney(ytd.lastYear)}</p>
+                <p className={`text-xs ${ytd.delta === null ? "text-muted-foreground" : ytd.delta >= 0 ? "text-status-paid" : "text-status-overdue"}`} data-testid="text-revenue-ytd-change">
+                  {ytd.delta === null ? `No ${ytd.year - 1} invoices to compare` : ytd.delta === 0 ? "No change" : `${ytd.delta > 0 ? "Up" : "Down"} ${Math.abs(ytd.delta)}% this year`}
+                </p>
+              </div>
+              <div className="rounded-md border p-3">
+                <p className="text-xs text-muted-foreground">Average per month in {ytd.year}</p>
+                <p className="text-lg font-semibold tabular-nums">{formatMoney(ytd.revenue / Number(today.slice(5, 7)))}</p>
+                <p className="text-xs text-muted-foreground">Over {Number(today.slice(5, 7))} month{today.slice(5, 7) === "01" ? "" : "s"}</p>
+              </div>
+            </div>
+          )}
           {isLoading ? (
             <Skeleton className="h-[220px] w-full" />
           ) : revenueRows.length === 0 ? (
@@ -192,10 +221,11 @@ export default function ReportsPage() {
           ) : (
             <>
               <div className="grid grid-cols-3 gap-3 text-sm">
-                {[["Revenue", profitTotals.revenue], ["Expenses", profitTotals.expenses], ["Profit", profitTotals.revenue - profitTotals.expenses]].map(([l, v]) => (
-                  <div key={l as string} className="rounded-md border p-3">
-                    <p className="text-xs text-muted-foreground">{l} · all time</p>
-                    <p className={`text-base font-semibold tabular-nums ${l === "Profit" && (v as number) < 0 ? "text-destructive" : ""}`} data-testid={`text-profit-total-${(l as string).toLowerCase()}`}>{formatMoney(v as number)}</p>
+                {([["Revenue", ytd.revenue, profitTotals.revenue], ["Expenses", ytdCosts, profitTotals.expenses], ["Profit", ytd.revenue - ytdCosts, profitTotals.revenue - profitTotals.expenses]] as [string, number, number][]).map(([l, v, all]) => (
+                  <div key={l} className="min-w-0 rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">{l} · {ytd.year} to date</p>
+                    <p className={`text-base font-semibold tabular-nums ${l === "Profit" && v < 0 ? "text-destructive" : ""}`} data-testid={`text-profit-ytd-${l.toLowerCase()}`}>{formatMoney(v)}</p>
+                    <p className="truncate text-xs text-muted-foreground tabular-nums" data-testid={`text-profit-total-${l.toLowerCase()}`}>All time {formatMoney(all)}</p>
                   </div>
                 ))}
               </div>
@@ -221,7 +251,7 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </div>
-              <p className="text-xs text-muted-foreground">Profit = invoice totals (canceled invoices not counted) minus mileage and supply expenses. <Link href="/expenses" className="underline">Manage expenses</Link></p>
+              <p className="text-xs text-muted-foreground">Profit = invoice totals (canceled invoices not counted) minus mileage, supply and subcontractor costs. <Link href="/expenses" className="underline">Expenses</Link> · <Link href="/subcontractors" className="underline">Subcontractors</Link></p>
             </>
           )}
         </CardContent>

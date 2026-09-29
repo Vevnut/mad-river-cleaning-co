@@ -6,6 +6,7 @@ import { z } from "zod";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { insertPropertySchema } from "@shared/schema";
 import type { Property, Customer } from "@shared/schema";
+import { BED_TYPES, totalBeds } from "@shared/beds";
 import { useToast } from "@/hooks/use-toast";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -51,6 +52,7 @@ function defaults(customerId?: number): FormValues {
     unitType: "house",
     bedrooms: 1,
     bathrooms: 1,
+    bedKing: 0, bedQueen: 0, bedFull: 0, bedTwin: 0, bedBunk: 0, bedSofa: 0,
     fullBathrooms: 1,
     halfBathrooms: 0,
     standardDepartureRate: null,
@@ -91,6 +93,8 @@ export function PropertyFormDialog({
     resolver: zodResolver(formSchema),
     defaultValues: defaults(defaultCustomerId),
   });
+  const [bedKing, bedQueen, bedFull, bedTwin, bedBunk, bedSofa] = form.watch(["bedKing", "bedQueen", "bedFull", "bedTwin", "bedBunk", "bedSofa"]);
+  const watchedBeds = { bedKing, bedQueen, bedFull, bedTwin, bedBunk, bedSofa };
 
   useEffect(() => {
     if (open) {
@@ -107,6 +111,8 @@ export function PropertyFormDialog({
               unitType: property.unitType,
               bedrooms: property.bedrooms,
               bathrooms: property.bathrooms,
+              bedKing: property.bedKing ?? 0, bedQueen: property.bedQueen ?? 0, bedFull: property.bedFull ?? 0,
+              bedTwin: property.bedTwin ?? 0, bedBunk: property.bedBunk ?? 0, bedSofa: property.bedSofa ?? 0,
               fullBathrooms: property.fullBathrooms ?? Math.floor(property.bathrooms),
               halfBathrooms: property.halfBathrooms ?? ((property.bathrooms % 1) === 0.5 ? 1 : 0),
               standardDepartureRate: property.standardDepartureRate,
@@ -369,6 +375,30 @@ export function PropertyFormDialog({
                   </FormItem>
                 )}
               />
+            </div>
+
+            <div className="rounded-md border p-3 space-y-3" data-testid="section-property-beds">
+              <div className="flex items-baseline justify-between gap-2">
+                <p className="text-sm font-medium">Beds</p>
+                <p className="text-xs text-muted-foreground tabular-nums" data-testid="text-bed-total">
+                  {totalBeds(watchedBeds) === 1 ? "1 bed" : `${totalBeds(watchedBeds)} beds`}
+                </p>
+              </div>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                {BED_TYPES.map((t) => (
+                  <FormField key={t.key} control={form.control} name={t.key} render={({ field }) => (
+                    <FormItem>
+                      <FormLabel className="text-xs font-normal text-muted-foreground">{t.label}</FormLabel>
+                      <FormControl>
+                        <Input {...field} value={field.value ?? 0} type="number" min={0} max={50} step={1} inputMode="numeric"
+                          onChange={(e) => field.onChange(Number.isNaN(e.target.valueAsNumber) ? 0 : e.target.valueAsNumber)}
+                          data-testid={`input-${t.key}`} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">

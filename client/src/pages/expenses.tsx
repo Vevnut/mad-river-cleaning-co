@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Car, Download, Paperclip, Plus, ShoppingBag, Wallet } from "lucide-react";
+import { Link } from "wouter";
+import { Car, Download, HardHat, Paperclip, Plus, ShoppingBag, Wallet } from "lucide-react";
+import type { SubPayment } from "@shared/subcontractors";
 import type { Property } from "@shared/schema";
 import { categoryLabel, type Expense } from "@shared/expenses";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,6 +43,7 @@ const miles = (v: number) => `${v.toLocaleString("en-US", { maximumFractionDigit
 export default function ExpensesPage() {
   const { data: expenses = [], isLoading } = useQuery<Expense[]>({ queryKey: ["/api/expenses"] });
   const { data: properties = [] } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
+  const { data: subPayments = [] } = useQuery<SubPayment[]>({ queryKey: ["/api/subcontractor-payments"] });
   const [range, setRange] = useState<Range>("month");
   const [editing, setEditing] = useState<Expense | null>(null);
   const [adding, setAdding] = useState<"" | "mileage" | "supply">(() => { const k = pendingExpense.kind; pendingExpense.kind = ""; return k; });
@@ -67,6 +70,10 @@ export default function ExpensesPage() {
     }
     return t;
   }, [rows]);
+  const subs = useMemo(() => {
+    const list = subPayments.filter(p => p.paidDate >= from && p.paidDate <= to);
+    return { amount: Math.round(list.reduce((n, p) => n + p.amount, 0) * 100) / 100, count: list.length };
+  }, [subPayments, from, to]);
   const byCategory = useMemo(() => {
     const m = new Map<string, number>();
     for (const e of rows) m.set(e.category, (m.get(e.category) ?? 0) + e.amount);
@@ -101,11 +108,12 @@ export default function ExpensesPage() {
         </ToggleGroup>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          { icon: Wallet, title: "Total expenses", value: formatMoney(totals.all), sub: `${rows.length} ${rows.length === 1 ? "entry" : "entries"} ${rangeLabel}`, id: "total" },
+          { icon: Wallet, title: "Total expenses", value: formatMoney(totals.all + subs.amount), sub: subs.count ? "Including subcontractors" : `${rows.length} ${rows.length === 1 ? "entry" : "entries"} ${rangeLabel}`, id: "total" },
           { icon: Car, title: "Mileage", value: formatMoney(totals.mileage), sub: `${miles(totals.miles)} · ${totals.trips} ${totals.trips === 1 ? "trip" : "trips"}`, id: "mileage" },
           { icon: ShoppingBag, title: "Supplies", value: formatMoney(totals.supplies), sub: totals.supplyCount ? `${totals.receipts} of ${totals.supplyCount} with receipts` : "No purchases", id: "supplies" },
+          { icon: HardHat, title: "Subcontractors", value: formatMoney(subs.amount), sub: <Link href="/subcontractors" className="underline">{subs.count} {subs.count === 1 ? "payment" : "payments"}</Link>, id: "subcontractors" },
         ].map(k => (
           <Card key={k.id}>
             <CardContent className="flex items-start gap-3 pt-5">
