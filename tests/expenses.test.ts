@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
@@ -34,7 +35,7 @@ async function call(method: string, path: string, body?: any, type = "applicatio
   return { status: r.status, body: t ? JSON.parse(t) : null };
 }
 function check(message: string, ok: boolean) { assert(ok, message); count++; console.log(`PASS ${message}`); }
-const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7), Buffer.from([0xff, 0xd9])]);
+const jpeg = readFileSync("tests/fixtures/tiny.jpg");
 
 try {
   check("IRS rate: 72.5¢ in the first half of 2026", irsRateFor("2026-03-10").rate === 0.725);
@@ -86,6 +87,15 @@ try {
     await call("DELETE", `/api/jobs/${job.id}`);
     const after = db.prepare("SELECT job_id FROM expenses WHERE id=?").get(linked.body.id) as any;
     check("deleting a job keeps its expenses", !!after && after.job_id === null);
+  }
+  {
+    const { isJpeg, IMAGE_HEADERS } = await import("../server/jpeg");
+    const spoof = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("<html><script>alert(1)</script></html>".padEnd(300, " ")), Buffer.from([0xff, 0xd9])]);
+    check("a real JPEG passes the upload check", isJpeg(jpeg));
+    check("files faking a JPEG start are refused", !isJpeg(spoof) && !isJpeg(jpeg.subarray(0, jpeg.length - 40)));
+    check("stored photos are served locked down", IMAGE_HEADERS["Content-Security-Policy"].includes("sandbox") && IMAGE_HEADERS["X-Content-Type-Options"] === "nosniff");
+    const e = (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-23", amount: 3 })).body;
+    check("spoofed receipt uploads are refused", (await call("POST", `/api/expenses/${e.id}/receipts`, spoof, "image/jpeg")).status === 400);
   }
   check("database links stay consistent", (db.pragma("foreign_key_check") as any[]).length === 0);
   console.log(`${count} expense checks passed.`);

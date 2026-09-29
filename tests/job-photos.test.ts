@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
@@ -31,7 +32,7 @@ async function call(method: string, path: string, body?: any, headers: Record<st
   return { status: r.status, text: r.status === 204 ? "" : await r.text(), type: r.headers.get("content-type") };
 }
 function check(message: string, test: () => void = () => {}) { test(); count++; console.log(`PASS ${message}`); }
-const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(200, 7), Buffer.from([0xff, 0xd9])]);
+const jpeg = readFileSync("tests/fixtures/tiny.jpg");
 const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
 try {
   const jobId = (db.prepare("SELECT id FROM jobs ORDER BY id LIMIT 1").get() as any).id;

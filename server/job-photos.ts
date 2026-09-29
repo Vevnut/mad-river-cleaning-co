@@ -1,3 +1,4 @@
+import { isJpeg, IMAGE_HEADERS } from "./jpeg";
 import express, { type Express } from "express";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -33,7 +34,7 @@ export function registerJobPhotos(app: Express) {
     if (!job(id)) return res.status(404).json({ message: "Job not found" });
     if (!(PHOTO_SECTIONS as readonly string[]).includes(section)) return res.status(400).json({ message: "Choose Damage or Final Walkthrough." });
     const body = req.body;
-    if (!Buffer.isBuffer(body) || body.length < 4 || body[0] !== 0xff || body[1] !== 0xd8 || body[2] !== 0xff)
+    if (!isJpeg(body))
       return res.status(400).json({ message: "Upload a photo (JPEG)." });
     const n = (sqlite.prepare("SELECT count(*) n FROM job_photos WHERE job_id=? AND section=?").get(id, section) as any).n;
     if (n >= MAX_PHOTOS_PER_SECTION) return res.status(400).json({ message: `This section already has ${MAX_PHOTOS_PER_SECTION} photos.` });
@@ -54,7 +55,7 @@ export function registerJobPhotos(app: Express) {
     const photo = sqlite.prepare("SELECT file_name FROM job_photos WHERE id=?").get(Number(req.params.id)) as any;
     const path = photo && join(dir, photo.file_name);
     if (!path || !/^[a-f0-9]{32}\.jpg$/.test(photo.file_name) || !existsSync(path)) return res.status(404).json({ message: "Photo not found" });
-    res.set({ "Content-Type": "image/jpeg", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" });
+    res.set(IMAGE_HEADERS);
     res.send(readFileSync(path));
   });
 

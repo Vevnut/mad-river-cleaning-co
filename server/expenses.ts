@@ -1,3 +1,4 @@
+import { isJpeg, IMAGE_HEADERS } from "./jpeg";
 import express, { type Express } from "express";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
@@ -129,7 +130,7 @@ export function registerExpenses(app: Express) {
     const id = Number(req.params.id);
     if (!get(id)) fail(404, "Expense not found");
     const body = req.body;
-    if (!Buffer.isBuffer(body) || body.length < 4 || body[0] !== 0xff || body[1] !== 0xd8 || body[2] !== 0xff)
+    if (!isJpeg(body))
       fail(400, "Upload a photo of the receipt (JPEG).");
     const n = (sqlite.prepare("SELECT count(*) n FROM expense_receipts WHERE expense_id=?").get(id) as any).n;
     if (n >= MAX_RECEIPTS_PER_EXPENSE) fail(400, `An expense can have up to ${MAX_RECEIPTS_PER_EXPENSE} receipt photos.`);
@@ -150,7 +151,7 @@ export function registerExpenses(app: Express) {
     const r = sqlite.prepare("SELECT file_name FROM expense_receipts WHERE id=?").get(Number(req.params.id)) as any;
     const path = r && join(dir, r.file_name);
     if (!path || !SAFE_FILE.test(r.file_name) || !existsSync(path)) fail(404, "Receipt not found");
-    res.set({ "Content-Type": "image/jpeg", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" });
+    res.set(IMAGE_HEADERS);
     res.send(readFileSync(path));
   });
 
