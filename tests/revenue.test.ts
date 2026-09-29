@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { revenueBy, weekStart } from "../client/src/lib/revenue";
+import { revenueBy, expensesBy, profitBy, weekStart } from "../client/src/lib/revenue";
 const inv = (issueDate: string, total: number, status = "paid") => ({ issueDate, total, status }) as any;
 let n = 0; const check = (m: string, f: () => void) => { f(); n++; console.log("PASS " + m); };
 const today = new Date(2026, 8, 28); // Mon Sep 28 2026
@@ -28,4 +28,14 @@ check("weeks crossing a month and year boundary", () => {
 });
 check("no invoices gives an empty history", () => assert.deepEqual(revenueBy([], "week", undefined, today), []));
 check("invoices dated ahead are included", () => assert.equal(revenueBy([inv("2026-10-12", 30)], "week", undefined, today).at(-1)!.revenue, 30));
+const exp = (expenseDate: string, kind: "mileage" | "supply", amount: number, totalMiles: number | null = null) => ({ expenseDate, kind, amount, totalMiles });
+const ex = [exp("2026-09-27", "mileage", 18.85, 24.8), exp("2026-09-22", "supply", 42.2), exp("2026-09-15", "mileage", 7.6, 10)];
+check("expenses split into mileage and supplies per week", () => {
+  const w = expensesBy(ex, "week", undefined, today);
+  assert.deepEqual(w.map(x => [x.key, x.mileage, x.supplies, x.total, x.miles]), [["2026-09-14", 7.6, 0, 7.6, 10], ["2026-09-21", 18.85, 42.2, 61.05, 24.8], ["2026-09-28", 0, 0, 0, 0]]);
+});
+check("profit is revenue minus expenses, skipping canceled invoices", () => {
+  const m = profitBy(data, ex, "month", undefined, today);
+  assert.deepEqual(m.map(x => [x.key, x.revenue, x.expenses, x.profit]), [["2026-08-01", 20, 0, 20], ["2026-09-01", 650, 68.65, 581.35]]);
+});
 console.log(`${n} revenue checks passed.`);

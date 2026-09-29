@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { requestExpense } from "@/pages/expenses";
 import { Search, Sun, Moon, Plus, ChevronDown } from "lucide-react";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
@@ -79,6 +80,12 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menuitem-new-invoice" onClick={() => navigate("/invoices/new")}>
               New Invoice
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menuitem-log-mileage" onClick={() => requestExpense("mileage", navigate)}>
+              Log Mileage
+            </DropdownMenuItem>
+            <DropdownMenuItem data-testid="menuitem-new-expense" onClick={() => requestExpense("supply", navigate)}>
+              Supply Cost
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

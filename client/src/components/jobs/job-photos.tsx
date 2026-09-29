@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { AlertTriangle, ClipboardCheck, ImagePlus, Loader2, Trash2, X } from "lucide-react";
 import { apiRequest, apiUrl, authHeaders, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { toJpeg } from "@/lib/image";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,30 +15,6 @@ import {
 
 type Section = "damage" | "final_walkthrough";
 type Photo = { id: number; jobId: number; section: Section; originalName: string; size: number; createdAt: string; createdBy: string };
-
-const MAX_EDGE = 2000;
-
-/** Decode, downscale and re-encode as JPEG. Re-encoding also drops location data. */
-async function toJpeg(file: File): Promise<Blob> {
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error(`Couldn't read ${file.name}. Try a JPEG or PNG photo.`));
-      i.src = url;
-    });
-    const scale = Math.min(1, MAX_EDGE / Math.max(img.naturalWidth, img.naturalHeight));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(img.naturalWidth * scale);
-    canvas.height = Math.round(img.naturalHeight * scale);
-    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
-    return await new Promise<Blob>((resolve, reject) =>
-      canvas.toBlob(b => (b ? resolve(b) : reject(new Error(`Couldn't process ${file.name}.`))), "image/jpeg", 0.85));
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 /** Photos are private, so they're fetched with the sign-in header rather than a public URL. */
 function usePhotoUrl(id: number) {

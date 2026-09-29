@@ -247,6 +247,8 @@ export class DatabaseStorage implements IStorage {
       );
     }
     db.delete(notes).where(eq(notes.propertyId, id)).run();
+    // Expenses are tax records: keep them, just unlink the property.
+    sqlite.prepare("UPDATE expenses SET property_id=NULL WHERE property_id=?").run(id);
     return db.delete(properties).where(eq(properties.id, id)).run().changes > 0;
   }
 
@@ -392,6 +394,7 @@ export class DatabaseStorage implements IStorage {
     db.delete(serviceChecklists).where(eq(serviceChecklists.jobId, id)).run();
     db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
     db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
+    sqlite.prepare("UPDATE expenses SET job_id=NULL WHERE job_id=?").run(id);
     return db.delete(jobs).where(eq(jobs.id, id)).run().changes > 0;
   }
 

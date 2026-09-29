@@ -12,7 +12,8 @@ import {
 } from "@/components/ui/table";
 import { formatMoney, formatDate } from "@/lib/format";
 import { exportRowsToCsv } from "@/lib/csv-export";
-import { revenueBy, type RevenuePeriod } from "@/lib/revenue";
+import { revenueBy, profitBy, type RevenuePeriod } from "@/lib/revenue";
+import type { Expense } from "@shared/expenses";
 import { PeriodToggle, RevenueBars } from "@/components/revenue-chart";
 
 const FREQUENCY_LABEL: Record<string, string> = {
@@ -32,6 +33,7 @@ export default function ReportsPage() {
   const { data: schedules = [] } = useQuery<Schedule[]>({ queryKey: ["/api/schedules"] });
   const { data: staffList = [] } = useQuery<Staff[]>({ queryKey: ["/api/staff"] });
 
+  const { data: expenses = [] } = useQuery<Expense[]>({ queryKey: ["/api/expenses"] });
   const isLoading = jobsLoading || invoicesLoading;
   const customerById = (id: number) => customers.find((c) => c.id === id);
   const propertyById = (id: number) => properties.find((p) => p.id === id);
@@ -42,6 +44,12 @@ export default function ReportsPage() {
   const revenueRows = useMemo(() => revenueBy(invoices, period), [invoices, period]);
   const chartRows = period === "week" ? revenueRows.slice(-26) : revenueRows.slice(-24);
   const periodName = period === "week" ? "Week" : "Month";
+
+  // --- Revenue, expenses and profit by month or week ---
+  const [profitPeriod, setProfitPeriod] = useState<RevenuePeriod>("month");
+  const profitRows = useMemo(() => profitBy(invoices, expenses, profitPeriod), [invoices, expenses, profitPeriod]);
+  const profitTotals = profitRows.reduce((a, r) => ({ revenue: a.revenue + r.revenue, expenses: a.expenses + r.expenses }), { revenue: 0, expenses: 0 });
+  const profitName = profitPeriod === "week" ? "Week" : "Month";
 
   // --- Jobs by property ---
   const jobsByProperty = useMemo(() => {
@@ -160,6 +168,60 @@ export default function ReportsPage() {
               <p className="text-xs text-muted-foreground">
                 Invoice totals by issue date. Weeks run Monday to Sunday. Canceled invoices are not counted.
               </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Revenue, expenses and profit */}
+      <Card>
+        <CardHeader className="flex-row flex-wrap items-center justify-between gap-2 pb-3">
+          <CardTitle className="text-base" data-testid="text-profit-title">Profit by {profitName}</CardTitle>
+          <div className="flex items-center gap-2">
+            <PeriodToggle value={profitPeriod} onChange={setProfitPeriod} testId="toggle-profit-period" />
+            <Button size="sm" variant="outline" className="gap-1.5" disabled={profitRows.length === 0} data-testid="button-export-profit-csv"
+              onClick={() => exportRowsToCsv(`profit-by-${profitPeriod}.csv`, [profitName, "Revenue", "Expenses", "Profit"],
+                profitRows.map((r) => [r.range, r.revenue.toFixed(2), r.expenses.toFixed(2), r.profit.toFixed(2)]))}>
+              <Download className="h-3.5 w-3.5" /> Export CSV
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {profitRows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground" data-testid="empty-profit">No invoices or expenses yet.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3 text-sm">
+                {[["Revenue", profitTotals.revenue], ["Expenses", profitTotals.expenses], ["Profit", profitTotals.revenue - profitTotals.expenses]].map(([l, v]) => (
+                  <div key={l as string} className="rounded-md border p-3">
+                    <p className="text-xs text-muted-foreground">{l} · all time</p>
+                    <p className={`text-base font-semibold tabular-nums ${l === "Profit" && (v as number) < 0 ? "text-destructive" : ""}`} data-testid={`text-profit-total-${(l as string).toLowerCase()}`}>{formatMoney(v as number)}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="max-h-72 overflow-auto rounded-md border">
+                <Table data-testid="table-profit-periods">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{profitName}</TableHead>
+                      <TableHead className="hidden text-right sm:table-cell">Revenue</TableHead>
+                      <TableHead className="hidden text-right sm:table-cell">Expenses</TableHead>
+                      <TableHead className="text-right">Profit</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {[...profitRows].reverse().map((r) => (
+                      <TableRow key={r.key} data-testid={`row-profit-${r.key}`}>
+                        <TableCell className="whitespace-nowrap text-sm">{r.range}</TableCell>
+                        <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{formatMoney(r.revenue)}</TableCell>
+                        <TableCell className="hidden text-right text-sm tabular-nums sm:table-cell">{formatMoney(r.expenses)}</TableCell>
+                        <TableCell className={`whitespace-nowrap text-right text-sm font-medium tabular-nums ${r.profit < 0 ? "text-destructive" : ""}`}>{formatMoney(r.profit)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              <p className="text-xs text-muted-foreground">Profit = invoice totals (canceled invoices not counted) minus mileage and supply expenses. <Link href="/expenses" className="underline">Manage expenses</Link></p>
             </>
           )}
         </CardContent>

@@ -25,6 +25,7 @@ import InvoicesListPage from "@/pages/invoices-list";
 import InvoiceDetailPage from "@/pages/invoice-detail";
 import InvoiceNewPage from "@/pages/invoice-new";
 import ReportsPage from "@/pages/reports";
+import ExpensesPage from "@/pages/expenses";
 import SettingsPage from "@/pages/settings";
 import { AuthGate } from "@/components/auth-gate";
 import PublicInvoicePage from "@/pages/public-invoice";
@@ -53,6 +54,7 @@ function AppRouter({
       <Route path="/invoices/:id/edit" component={InvoiceNewPage} />
       <Route path="/invoices/:id" component={InvoiceDetailPage} />
       <Route path="/invoices" component={InvoicesListPage} />
+      <Route path="/expenses" component={ExpensesPage} />
       <Route path="/reports" component={ReportsPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route component={NotFound} />

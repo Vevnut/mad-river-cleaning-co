@@ -133,4 +133,25 @@ export function migrate(sql: Database.Database) {
       sql.prepare("INSERT INTO schema_migrations VALUES (6,?)").run(new Date().toISOString());
     })();
   }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=7").get()) {
+    sql.transaction(() => {
+      // Expense tracker: mileage and supply costs, with optional receipt photos.
+      sql.exec(`CREATE TABLE IF NOT EXISTS expenses (
+        id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('mileage','supply')),
+        expense_date TEXT NOT NULL, description TEXT NOT NULL, category TEXT NOT NULL,
+        vendor TEXT, amount REAL NOT NULL CHECK(amount >= 0),
+        miles REAL, round_trip INTEGER NOT NULL DEFAULT 0, total_miles REAL, rate_per_mile REAL,
+        from_location TEXT, to_location TEXT,
+        property_id INTEGER REFERENCES properties(id), job_id INTEGER REFERENCES jobs(id),
+        payment_method TEXT, notes TEXT,
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL, updated_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS expenses_date ON expenses(expense_date);
+        CREATE TABLE IF NOT EXISTS expense_receipts (
+        id INTEGER PRIMARY KEY, expense_id INTEGER NOT NULL REFERENCES expenses(id),
+        file_name TEXT NOT NULL UNIQUE, original_name TEXT NOT NULL, size INTEGER NOT NULL,
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS expense_receipts_expense ON expense_receipts(expense_id);`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (7,?)").run(new Date().toISOString());
+    })();
+  }
 }
