@@ -4,9 +4,32 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { removeDemoCustomers } from "./demo-cleanup";
 
+/** Highest migration version below. Bump when adding a migration. */
+export const LATEST_MIGRATION = 9;
+
+/**
+ * Before any pending migration touches an existing database, save a full copy
+ * (VACUUM INTO) to backups/before-upgrade-v<from>-to-v<to>-<time>.db next to it.
+ * Skipped for brand-new empty databases and when already up to date.
+ * If the copy can't be written, the upgrade stops so nothing changes unbacked.
+ */
+export function backupBeforeUpgrade(sql: Database.Database): string | null {
+  const current = (sql.prepare("SELECT coalesce(max(version),0) v FROM schema_migrations").get() as any).v as number;
+  if (current >= LATEST_MIGRATION) return null;
+  const hasData = sql.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='customers'").get();
+  if (!hasData) return null;
+  const dir = join(dirname(process.env.DATABASE_PATH || "data.db"), "backups");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const file = join(dir, `before-upgrade-v${current}-to-v${LATEST_MIGRATION}-${Date.now()}.db`);
+  sql.prepare("VACUUM INTO ?").run(file);
+  console.log(`Saved a full database backup before upgrading: ${file}`);
+  return file;
+}
+
 /** Additive, transactional migrations. Never runs drizzle push or rebuilds tables. */
 export function migrate(sql: Database.Database) {
   sql.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
+  backupBeforeUpgrade(sql);
   if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=1").get()) {
   const dir = join(dirname(process.env.DATABASE_PATH || "data.db"), "backups");
   mkdirSync(dir, { recursive: true, mode: 0o700 });

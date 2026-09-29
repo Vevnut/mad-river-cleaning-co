@@ -16,6 +16,7 @@ npx tsx tests/revenue.test.ts           # monthly and weekly revenue totals
 npx tsx tests/invoice-delete.test.ts    # three-step invoice deletion rules
 npx tsx tests/expenses.test.ts          # mileage, supply costs and receipt photos
 npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed counts
+npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migration
 ```
 
 ## Layout
@@ -35,6 +36,7 @@ npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed
 - Expenses (`server/expenses.ts`, `shared/expenses.ts`): mileage uses the IRS business rate for the trip date from `IRS_MILEAGE_RATES` (add new rates there); receipts live in `uploads/expense-receipts`. Profit = revenue minus expenses.
 - Subcontractors (`server/subcontractors.ts`, `shared/subcontractors.ts`): one per job via `job_subcontractors`; owed = pay on completed/invoiced jobs minus `subcontractor_payments`. 1099-NEC thresholds live in `NEC_THRESHOLDS` (add a row each year from 2027). Payments count as costs in profit.
 - Properties have bed counts by type (`bed_king` … `bed_sofa`); helpers in `shared/beds.ts`.
+- Migrations: bump `LATEST_MIGRATION` in `server/migrations.ts` with each new one. On startup, any pending upgrade first saves `backups/before-upgrade-v<from>-to-v<to>-<time>.db` (git-ignored).
 - Revenue is invoice totals by issue date, excluding canceled invoices; weeks run Monday to Sunday (`client/src/lib/revenue.ts`).
 - Deleting an invoice takes three steps (review, "I understand", type the invoice number) and saves a full copy in `deleted_invoices`. Invoices with Stripe card payments cannot be deleted.
 - Invoices keep the prices saved on them. Changing a service or property price must never change existing invoices.
