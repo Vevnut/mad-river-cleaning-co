@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, copyFileSync, unlinkSync, chmodSync } from "node
 import { dirname, join } from "node:path";
 
 /**
- * One-time move of a full database onto this server (used to bring the preview's
+ * DISABLED (not imported by the server). One-time move of a full database onto this server (used to bring the preview's
  * real data onto the live app). Runs BEFORE the database is opened.
  *
  * It only happens when ALL of these hold:
@@ -48,4 +48,5 @@ export function runPendingDataImport(dbPath = process.env.DATABASE_PATH || "data
   return importId;
 }
 
-runPendingDataImport();
+// Not run automatically. The preview → live move was completed on 2026-10-09; to use again,
+// call runPendingDataImport() deliberately from server/index.ts before the database opens.

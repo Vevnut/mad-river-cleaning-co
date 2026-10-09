@@ -1,5 +1,4 @@
 import "dotenv/config";
-import "./data-import"; // must run before the database is opened
 import express, { Response, NextFunction } from 'express';
 import type { Request } from 'express';
 import { registerRoutes } from "./routes";
