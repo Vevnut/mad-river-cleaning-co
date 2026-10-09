@@ -23,6 +23,9 @@ export const IMPORT_FUTURE_DAYS = 400;
 export const STALE_MS = 15 * 60 * 1000;
 const MAX_ICS_BYTES = 8 * 1024 * 1024;
 const MAX_OCCURRENCES = 5000;
+const MAX_EVENTS = 20000;          // VEVENT blocks read from one calendar
+const MAX_REPEAT_STEPS = 100000;   // repeat-rule steps across the WHOLE calendar
+const MAX_PARSE_MS = 5000;         // wall-clock budget for expanding one calendar
 
 function fail(status: number, message: string): never { throw Object.assign(new Error(message), { status }); }
 const now = () => new Date().toISOString();
@@ -132,6 +135,10 @@ export function parseIcs(text: string, from: string, to: string): ParsedEvent[] 
     try { ICAL.TimezoneService.register(tz); } catch { /* ignore broken zones */ }
   }
   const vevents = root.getAllSubcomponents("vevent");
+  if (vevents.length > MAX_EVENTS) fail(400, "That calendar has too many events to import.");
+  const started = Date.now();
+  let steps = 0;
+  const overBudget = () => steps > MAX_REPEAT_STEPS || Date.now() - started > MAX_PARSE_MS;
   const exceptions = new Map<string, any[]>();
   const masters: any[] = [];
   for (const v of vevents) {
@@ -163,6 +170,7 @@ export function parseIcs(text: string, from: string, to: string): ParsedEvent[] 
     }
   };
   for (const v of masters) {
+    if (overBudget() || out.length >= MAX_OCCURRENCES) break;
     const uid = String(v.getFirstPropertyValue("uid") || "") || `noid-${out.length}`;
     let ev: any;
     try { ev = new ICAL.Event(v, { strictExceptions: false, exceptions: exceptions.get(uid) || [] }); } catch { continue; }
@@ -170,7 +178,10 @@ export function parseIcs(text: string, from: string, to: string): ParsedEvent[] 
     if (!ev.isRecurring()) { push(uid, v, ev.startDate, ev.endDate); continue; }
     const it = ev.iterator();
     let next: any, guard = 0;
-    while ((next = it.next()) && guard++ < 20000 && out.length < MAX_OCCURRENCES) {
+    while (guard++ < 20000 && out.length < MAX_OCCURRENCES && !overBudget()) {
+      steps++;
+      next = it.next();
+      if (!next) break;
       if (next.compare(windowEnd) >= 0) break;
       const occ = ev.getOccurrenceDetails(next);
       if (occ.endDate && occ.endDate.compare(windowStart) < 0) continue;
@@ -194,10 +205,25 @@ export const defaultFetcher: Fetcher = async (url) => {
     fail(400, "Google says that address doesn't work. It may have been reset — copy the secret iCal address again.");
   if (!res.ok) fail(502, `Google Calendar answered with an error (${res.status}). Try again later.`);
   const len = Number(res.headers.get("content-length") || 0);
-  if (len > MAX_ICS_BYTES) fail(400, "That calendar is too large to import.");
-  const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.length > MAX_ICS_BYTES) fail(400, "That calendar is too large to import.");
-  return buf.toString("utf8");
+  if (len > MAX_ICS_BYTES) { await res.body?.cancel().catch(() => {}); fail(400, "That calendar is too large to import."); }
+  // Count bytes as they arrive and stop early, so an oversized answer is never held in memory.
+  const reader = res.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > MAX_ICS_BYTES) { await reader.cancel().catch(() => {}); fail(400, "That calendar is too large to import."); }
+      chunks.push(value);
+    }
+  } catch (e: any) {
+    if (e?.status) throw e;
+    fail(502, "Google Calendar stopped answering partway through. Try again in a minute.");
+  }
+  return Buffer.concat(chunks).toString("utf8");
 };
 let fetcher: Fetcher = defaultFetcher;
 /** Tests swap in a fake so they never call Google. */

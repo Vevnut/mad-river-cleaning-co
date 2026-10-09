@@ -142,6 +142,20 @@ try {
   check("removing disconnects it and clears its events", (await call("DELETE", `/api/calendar/sources/${added.body.id}`)).status === 204
     && (await call("GET", "/api/calendar/sources")).body.length === 0 && (db.prepare("SELECT count(*) n FROM calendar_events").get() as any).n === 0);
 
+  // ── Limits on untrusted calendars ──
+  const many = ["BEGIN:VCALENDAR", "VERSION:2.0"];
+  for (let i = 0; i < 400; i++) many.push("BEGIN:VEVENT", `UID:r${i}`, "DTSTART:19000101T120000Z", "DTEND:19000101T130000Z", "RRULE:FREQ=MINUTELY", "SUMMARY:x", "END:VEVENT");
+  many.push("END:VCALENDAR");
+  const t0 = Date.now();
+  cal.parseIcs(many.join("\r\n"), today, cal.addDays(today, 30));
+  check("hostile repeat rules can't tie up the server", Date.now() - t0 < 8000);
+  const big = createServer((_q, r) => { r.writeHead(200, { "Content-Type": "text/calendar" }); const chunk = Buffer.alloc(1024 * 1024, 65); let n = 0;
+    const pump = () => { while (n < 12) { n++; if (!r.write(chunk)) return r.once("drain", pump); } r.end(); }; pump(); });
+  await new Promise<void>(r => big.listen(0, "127.0.0.1", r));
+  const bigErr = await cal.defaultFetcher(`http://127.0.0.1:${(big.address() as any).port}/x.ics`).then(() => null, (e: any) => e);
+  big.close();
+  check("oversized downloads are stopped while streaming", bigErr?.status === 400 && /too large/.test(bigErr.message));
+
   // A real-looking Google file (US holidays layout) parses.
   check("database links stay consistent", (db.pragma("foreign_key_check") as any[]).length === 0);
   console.log(`${count} calendar checks passed.`);
