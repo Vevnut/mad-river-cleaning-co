@@ -24,14 +24,15 @@ import {
 const formSchema = insertCustomerSchema.extend({
   name: z.string().min(1, "Name is required"),
   customerType: z.enum(["individual", "company"]),
-  email: z.string().min(1, "Email is required").email("Enter a valid email"),
+  // Email is optional; when given it must look like an email.
+  email: z.string().trim().email("Enter a valid email, or leave it blank").or(z.literal("")),
   phone: z.string().min(7, "Phone number is required"),
   preferredContact: z.enum(["email", "phone", "text"]),
   billingAddressLine1: z.string().min(1, "Billing address is required"),
   billingCity: z.string().min(1, "City is required"),
   billingState: z.string().min(2, "State is required"),
   billingZip: z.string().min(5, "ZIP is required"),
-});
+}).refine(v => v.preferredContact !== "email" || !!v.email, { path: ["email"], message: "Add an email, or choose phone or text as the preferred contact" });
 
 type FormValues = z.infer<typeof formSchema>;
 
@@ -42,7 +43,7 @@ const DEFAULTS: FormValues = {
   email: "",
   phone: "",
   altPhone: "",
-  preferredContact: "email",
+  preferredContact: "phone",
   billingAddressLine1: "",
   billingAddressLine2: "",
   billingCity: "",
@@ -191,7 +192,7 @@ export function CustomerFormDialog({
                 name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Email *</FormLabel>
+                    <FormLabel>Email <span className="font-normal text-muted-foreground">(optional)</span></FormLabel>
                     <FormControl>
                       <Input {...field} type="email" data-testid="input-customer-email" />
                     </FormControl>

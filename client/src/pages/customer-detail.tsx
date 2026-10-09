@@ -140,10 +140,12 @@ export default function CustomerDetailPage() {
                 <CardTitle className="text-base">Contact Info</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Mail className="h-4 w-4 text-muted-foreground" />
-                  <span data-testid="text-customer-email">{customer.email}</span>
-                </div>
+                {customer.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span data-testid="text-customer-email">{customer.email}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-muted-foreground" />
                   <span className="tabular-nums" data-testid="text-customer-phone">{customer.phone}</span>

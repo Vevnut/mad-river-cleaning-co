@@ -31,8 +31,10 @@ export const SUPPLY_CATEGORIES = [
   { value: "other", label: "Other" },
 ] as const;
 export type SupplyCategory = (typeof SUPPLY_CATEGORIES)[number]["value"];
+/** Gas entries are stored with kind "mileage" (older ones were logged by miles; new ones are just the $ spent). */
+export const isGasCategory = (v: string | null | undefined) => v === "gas" || v === "mileage";
 export const categoryLabel = (v: string | null | undefined) =>
-  v === "mileage" ? "Mileage" : SUPPLY_CATEGORIES.find(c => c.value === v)?.label ?? "Other";
+  isGasCategory(v) ? "Gas" : SUPPLY_CATEGORIES.find(c => c.value === v)?.label ?? "Other";
 
 export const PAYMENT_METHODS = [
   { value: "card", label: "Card" },

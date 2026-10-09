@@ -36,7 +36,7 @@ export default function ReportsPage() {
 
   const { data: expenses = [] } = useQuery<Expense[]>({ queryKey: ["/api/expenses"] });
   const { data: subPayments = [] } = useQuery<SubPayment[]>({ queryKey: ["/api/subcontractor-payments"] });
-  // Costs = mileage + supplies + subcontractor payments (by date paid).
+  // Costs = gas + supplies + subcontractor payments (by date paid).
   const costs = useMemo(() => [...expenses, ...subPayments.map(p => ({ expenseDate: p.paidDate, kind: "supply" as const, amount: p.amount, totalMiles: null }))], [expenses, subPayments]);
   const isLoading = jobsLoading || invoicesLoading;
   const customerById = (id: number) => customers.find((c) => c.id === id);
@@ -251,7 +251,7 @@ export default function ReportsPage() {
                   </TableBody>
                 </Table>
               </div>
-              <p className="text-xs text-muted-foreground">Profit = invoice totals (canceled invoices not counted) minus mileage, supply and subcontractor costs. <Link href="/expenses" className="underline">Expenses</Link> · <Link href="/subcontractors" className="underline">Subcontractors</Link></p>
+              <p className="text-xs text-muted-foreground">Profit = invoice totals (canceled invoices not counted) minus gas, supply and subcontractor costs. <Link href="/expenses" className="underline">Expenses</Link> · <Link href="/subcontractors" className="underline">Subcontractors</Link></p>
             </>
           )}
         </CardContent>

@@ -45,18 +45,21 @@ try {
   check("expenses require sign-in", (await call("GET", "/api/expenses")).status === 401);
   token = (await call("POST", "/api/auth/setup", { email: "expenses@example.test", password: "Expense-test-only-123", setupToken: "expense-test-setup" })).body.token;
 
-  const trip = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", miles: 12.4, roundTrip: true, fromLocation: "Home", toLocation: "151 Pinnacle" });
-  check("mileage uses the IRS rate for the trip date", trip.status === 201 && trip.body.ratePerMile === 0.76);
-  check("round trips double the miles", trip.body.totalMiles === 24.8 && trip.body.amount === 18.85);
-  check("mileage gets a default description", trip.body.description === "Business trip");
-
-  const custom = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-22", miles: 10, ratePerMile: 0.5, description: "Supply run" });
-  check("a custom mileage rate is respected", custom.body.amount === 5 && custom.body.totalMiles === 10);
+  const gas = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", amount: 48.567, vendor: "Irving", paymentMethod: "card" });
+  check("gas saves as dollars spent, rounded to cents", gas.status === 201 && gas.body.amount === 48.57 && gas.body.category === "gas");
+  check("gas gets a default description and no miles", gas.body.description === "Gas" && gas.body.miles === null && gas.body.totalMiles === null && gas.body.vendor === "Irving");
+  check("miles alone no longer make a gas entry", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-22", miles: 10 })).status === 400);
+  // An older mileage entry still loads, and editing it keeps its dollar amount as gas.
+  const old = db.prepare("INSERT INTO expenses (kind,expense_date,description,category,amount,miles,round_trip,total_miles,rate_per_mile,created_at,created_by,updated_at) VALUES ('mileage','2026-09-01','Business trip','mileage',18.85,12.4,1,24.8,0.76,'x','x','x')").run();
+  const oldList = (await call("GET", "/api/expenses")).body.find((e: any) => e.id === Number(old.lastInsertRowid));
+  check("older mileage entries still show", oldList?.amount === 18.85 && oldList.totalMiles === 24.8);
+  const conv = await call("PATCH", `/api/expenses/${old.lastInsertRowid}`, { kind: "mileage", expenseDate: "2026-09-01", amount: 18.85 });
+  check("editing an older mileage entry keeps its amount as gas", conv.status === 200 && conv.body.amount === 18.85 && conv.body.category === "gas");
 
   const supply = await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-23", amount: 42.199, category: "cleaning_supplies", vendor: "Walmart", paymentMethod: "card" });
   check("supply costs save, rounded to cents", supply.status === 201 && supply.body.amount === 42.2 && supply.body.vendor === "Walmart");
 
-  check("zero or negative miles are refused", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", miles: 0 })).status === 400);
+  check("zero gas amounts are refused", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", amount: 0 })).status === 400);
   check("negative amounts are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: -5 })).status === 400);
   check("unknown categories are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: 5, category: "vacation" })).status === 400);
   check("invalid dates are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-02-30", amount: 5 })).status === 400);
@@ -82,7 +85,7 @@ try {
   // Deleting a linked job keeps the expense, just unlinks it.
   const job = db.prepare("SELECT id FROM jobs ORDER BY id LIMIT 1").get() as any;
   if (job) {
-    const linked = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-24", miles: 8, jobId: job.id });
+    const linked = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-24", amount: 30, jobId: job.id });
     db.prepare("DELETE FROM job_photos WHERE job_id=?").run(job.id);
     await call("DELETE", `/api/jobs/${job.id}`);
     const after = db.prepare("SELECT job_id FROM expenses WHERE id=?").get(linked.body.id) as any;

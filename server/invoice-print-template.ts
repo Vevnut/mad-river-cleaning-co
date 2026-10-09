@@ -175,7 +175,7 @@ export function renderInvoicePrintHtml(opts: {
       ${customer.companyName ? `<div class="info-row">${esc(customer.name)}</div>` : ""}
       ${billingLines.map((l) => `<div class="info-row">${esc(l)}</div>`).join("")}
       <div class="info-row">${esc(customer.phone)}</div>
-      <div class="info-row">${esc(customer.email)}</div>
+      ${customer.email ? `<div class="info-row">${esc(customer.email)}</div>` : ""}
     </div>
   </div>
 

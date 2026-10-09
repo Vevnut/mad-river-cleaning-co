@@ -81,8 +81,8 @@ export function AppHeader({ onNewCustomer, onNewProperty }: AppHeaderProps) {
             <DropdownMenuItem data-testid="menuitem-new-invoice" onClick={() => navigate("/invoices/new")}>
               New Invoice
             </DropdownMenuItem>
-            <DropdownMenuItem data-testid="menuitem-log-mileage" onClick={() => requestExpense("mileage", navigate)}>
-              Log Mileage
+            <DropdownMenuItem data-testid="menuitem-add-gas" onClick={() => requestExpense("mileage", navigate)}>
+              Add Gas
             </DropdownMenuItem>
             <DropdownMenuItem data-testid="menuitem-new-expense" onClick={() => requestExpense("supply", navigate)}>
               Supply Cost

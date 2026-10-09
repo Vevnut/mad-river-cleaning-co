@@ -5,10 +5,10 @@ import { join, resolve } from "node:path";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { sqlite } from "./storage";
-import { SUPPLY_CATEGORIES, PAYMENT_METHODS, irsRateFor, mileageAmount, roundCents } from "@shared/expenses";
+import { SUPPLY_CATEGORIES, PAYMENT_METHODS, roundCents } from "@shared/expenses";
 
 /**
- * Expense tracker: mileage and supply costs, with optional receipt photos.
+ * Expense tracker: gas and supply costs, with optional receipt photos.
  * Every route is registered after the sign-in gate. Receipts are resized and
  * re-encoded to JPEG in the browser (dropping location data); the server only
  * accepts real JPEG bytes.
@@ -27,12 +27,12 @@ const shared = {
   jobId: z.number().int().positive().nullable().optional().default(null),
   notes: text(2000),
 };
-const mileageSchema = z.object({
+// Gas: just the dollars spent. (Stored as kind "mileage" so older mileage entries keep working.)
+const gasSchema = z.object({
   kind: z.literal("mileage"), ...shared,
-  miles: z.number().finite().positive("Enter the miles driven").max(5000),
-  roundTrip: z.boolean().default(false),
-  ratePerMile: z.number().finite().min(0).max(5).optional(),
-  fromLocation: text(200), toLocation: text(200),
+  amount: z.number().finite().positive("Enter the amount spent on gas").max(100000),
+  vendor: text(120),
+  paymentMethod: z.enum(PAYMENT_METHODS.map(m => m.value) as [string, ...string[]]).nullable().optional().default(null),
 });
 const supplySchema = z.object({
   kind: z.literal("supply"), ...shared,
@@ -41,7 +41,7 @@ const supplySchema = z.object({
   vendor: text(120),
   paymentMethod: z.enum(PAYMENT_METHODS.map(m => m.value) as [string, ...string[]]).nullable().optional().default(null),
 });
-const expenseSchema = z.discriminatedUnion("kind", [mileageSchema, supplySchema]);
+const expenseSchema = z.discriminatedUnion("kind", [gasSchema, supplySchema]);
 
 function fail(status: number, message: string): never { throw Object.assign(new Error(message), { status }); }
 const row = (r: any) => r && ({
@@ -63,11 +63,9 @@ function columns(body: unknown) {
   if (d.jobId && !sqlite.prepare("SELECT 1 FROM jobs WHERE id=?").get(d.jobId)) fail(400, "That job no longer exists.");
   const common = { expense_date: d.expenseDate, property_id: d.propertyId, job_id: d.jobId, notes: d.notes };
   if (d.kind === "mileage") {
-    const rate = d.ratePerMile ?? irsRateFor(d.expenseDate).rate;
-    const total = roundCents(d.miles * (d.roundTrip ? 2 : 1));
-    return { ...common, kind: "mileage", description: d.description || "Business trip", category: "mileage",
-      vendor: null, amount: mileageAmount(d.miles, d.roundTrip, rate), miles: d.miles, round_trip: d.roundTrip ? 1 : 0,
-      total_miles: total, rate_per_mile: rate, from_location: d.fromLocation, to_location: d.toLocation, payment_method: null };
+    return { ...common, kind: "mileage", description: d.description || "Gas", category: "gas",
+      vendor: d.vendor, amount: roundCents(d.amount), miles: null, round_trip: 0, total_miles: null,
+      rate_per_mile: null, from_location: null, to_location: null, payment_method: d.paymentMethod };
   }
   return { ...common, kind: "supply", description: d.description || (SUPPLY_CATEGORIES.find(c => c.value === d.category)?.label ?? "Supplies"),
     category: d.category, vendor: d.vendor, amount: roundCents(d.amount), miles: null, round_trip: 0, total_miles: null,
