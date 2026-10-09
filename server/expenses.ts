@@ -30,13 +30,13 @@ const shared = {
 // Gas: just the dollars spent. (Stored as kind "mileage" so older mileage entries keep working.)
 const gasSchema = z.object({
   kind: z.literal("mileage"), ...shared,
-  amount: z.number().finite().positive("Enter the amount spent on gas").max(100000),
+  amount: z.number().finite().min(0.01, "Enter the amount spent on gas").max(100000),
   vendor: text(120),
   paymentMethod: z.enum(PAYMENT_METHODS.map(m => m.value) as [string, ...string[]]).nullable().optional().default(null),
 });
 const supplySchema = z.object({
   kind: z.literal("supply"), ...shared,
-  amount: z.number().finite().positive("Enter the amount").max(100000),
+  amount: z.number().finite().min(0.01, "Enter the amount").max(100000),
   category: z.enum(SUPPLY_CATEGORIES.map(c => c.value) as [string, ...string[]]).default("cleaning_supplies"),
   vendor: text(120),
   paymentMethod: z.enum(PAYMENT_METHODS.map(m => m.value) as [string, ...string[]]).nullable().optional().default(null),
