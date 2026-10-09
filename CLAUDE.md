@@ -18,6 +18,7 @@ npx tsx tests/expenses.test.ts          # mileage, supply costs and receipt phot
 npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed counts
 npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migration
 npx tsx tests/calendar.test.ts          # Google Calendar jobs link + Google events import (no network)
+npx tsx tests/data-import.test.ts       # one-time database move (import/data-import.sqlite-import)
 ```
 
 ## Layout
