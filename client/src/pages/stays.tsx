@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ChevronRight, Plus, BedDouble } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, BedDouble, AlertTriangle } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import type { Stay, Property } from "@shared/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -65,7 +66,31 @@ interface Bar {
   stay: Stay;
   startCol: number; // 0-based, inclusive
   endCol: number; // 0-based, exclusive (nights model: checkout day itself is free)
+  rawStart: number; // check-in day index relative to the window (may be < 0)
+  rawEnd: number; // check-out day index relative to the window (may be > window)
   lane: number;
+}
+
+// With overlap shown, a stay runs from mid-afternoon of check-in day to late
+// morning of check-out day, so a same-day turnover visibly overlaps.
+const CHECKIN_AT = 0.35;
+const CHECKOUT_AT = 0.65;
+const LANE_PX = 32;
+
+/** Stays on the same property whose NIGHTS overlap (a real double-booking). */
+export function doubleBookedIds(propertyStays: Stay[]): Set<number> {
+  const ids = new Set<number>();
+  const list = [...propertyStays].sort((a, b) => a.checkInDate.localeCompare(b.checkInDate));
+  for (let i = 0; i < list.length; i++)
+    for (let j = i + 1; j < list.length && list[j].checkInDate < list[i].checkOutDate; j++) {
+      ids.add(list[i].id); ids.add(list[j].id);
+    }
+  return ids;
+}
+/** Check-out days that are also someone's check-in day (same-day turnovers). */
+function turnoverDays(propertyStays: Stay[]): Set<string> {
+  const ins = new Set(propertyStays.map((s) => s.checkInDate));
+  return new Set(propertyStays.map((s) => s.checkOutDate).filter((d) => ins.has(d)));
 }
 
 // Greedy interval-lane assignment so overlapping stays on the same property
@@ -79,9 +104,9 @@ function layoutBars(propertyStays: Stay[], daysISO: string[]): { bars: Bar[]; la
       const rawEnd = diffDaysISO(windowStart, stay.checkOutDate); // exclusive
       const startCol = Math.max(0, rawStart);
       const endCol = Math.min(windowLen, rawEnd);
-      return { stay, startCol, endCol };
+      return { stay, startCol, endCol, rawStart, rawEnd };
     })
-    .filter((c) => c.endCol > c.startCol)
+    .filter((c) => c.rawEnd >= 0 && c.rawStart < windowLen && c.rawEnd > c.rawStart)
     .sort((a, b) => a.startCol - b.startCol);
 
   const laneEnds: number[] = [];
@@ -106,6 +131,7 @@ export default function StaysPage() {
   const [formOpen, setFormOpen] = useState(false);
   const [formDefaults, setFormDefaults] = useState<{ date?: string; propertyId?: number }>({});
   const [editingStay, setEditingStay] = useState<Stay | null>(null);
+  const [showOverlap, setShowOverlap] = useState(true);
 
   const todayISO = isoDate(new Date());
 
@@ -220,6 +246,11 @@ export default function StaysPage() {
           </SelectContent>
         </Select>
 
+        <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer" title="Show check-out days, so same-day turnovers overlap">
+          <Switch checked={showOverlap} onCheckedChange={setShowOverlap} data-testid="switch-show-overlap" />
+          Show overlap
+        </label>
+
         {/* Legend */}
         <div className="ml-auto flex flex-wrap items-center gap-3">
           {PLATFORMS.map((p) => (
@@ -228,6 +259,18 @@ export default function StaysPage() {
               <span className="text-xs text-muted-foreground">{PLATFORM_LABELS[p]}</span>
             </div>
           ))}
+          {showOverlap && (
+            <>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-4 rounded-sm bg-gradient-to-r from-chart-4/40 to-chart-1/40 ring-1 ring-border" aria-hidden />
+                <span className="text-xs text-muted-foreground">Same-day turnover</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="h-2.5 w-4 rounded-sm ring-2 ring-destructive" aria-hidden />
+                <span className="text-xs text-muted-foreground">Double-booked</span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
@@ -309,7 +352,10 @@ export default function StaysPage() {
             {properties.map((property) => {
               const propertyStays = staysByProperty.get(property.id) ?? [];
               const { bars, laneCount } = layoutBars(propertyStays, daysISO);
-              const rowHeight = laneCount * 34 + 12;
+              const rowHeight = laneCount * LANE_PX + 12;
+              const conflicts = doubleBookedIds(propertyStays);
+              const turnovers = showOverlap ? turnoverDays(propertyStays) : new Set<string>();
+              const visibleConflicts = bars.filter((b) => conflicts.has(b.stay.id)).length;
 
               return (
                 <div key={property.id} className="flex border-b last:border-b-0 group" data-testid={`row-stays-property-${property.id}`}>
@@ -320,6 +366,11 @@ export default function StaysPage() {
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium" data-testid={`text-stays-property-name-${property.id}`}>{property.name}</p>
                       <p className="truncate text-[11px] text-muted-foreground">{property.city}, {property.state}</p>
+                      {visibleConflicts > 0 && (
+                        <p className="flex items-center gap-1 text-[11px] font-medium text-destructive" data-testid={`text-double-booked-${property.id}`}>
+                          <AlertTriangle className="h-3 w-3" /> Double-booked
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={() => openNewStay(property.id)}
@@ -345,36 +396,35 @@ export default function StaysPage() {
                         return (
                           <div
                             key={iso}
-                            className={`border-r border-border/50 ${isToday ? "bg-primary/5" : isWeekend ? "bg-muted/15" : ""}`}
+                            className={`border-r border-border/50 ${turnovers.has(iso) ? "bg-[repeating-linear-gradient(135deg,hsl(var(--muted))_0_4px,transparent_4px_8px)]" : isToday ? "bg-primary/5" : isWeekend ? "bg-muted/15" : ""}`}
+                            title={turnovers.has(iso) ? "Same-day turnover" : undefined}
                           />
                         );
                       })}
                     </div>
 
                     {/* Booking bars */}
-                    <div
-                      className="relative grid gap-y-1 px-0 py-1.5"
-                      style={{
-                        gridTemplateColumns: `repeat(${daysISO.length}, ${colPx}px)`,
-                        gridTemplateRows: `repeat(${laneCount}, 28px)`,
-                      }}
-                    >
-                      {bars.map(({ stay, startCol, endCol, lane }) => {
+                    <div className="relative" style={{ height: rowHeight }}>
+                      {bars.map(({ stay, startCol, endCol, rawStart, rawEnd, lane }) => {
                         const platform = stay.platform as Platform;
                         const nights = diffDaysISO(stay.checkInDate, stay.checkOutDate);
+                        const conflict = conflicts.has(stay.id);
+                        // Overlap view: check-in afternoon → check-out morning. Otherwise: nights only.
+                        const left = showOverlap ? Math.max(0, (rawStart + CHECKIN_AT) * colPx) : startCol * colPx;
+                        const right = showOverlap ? Math.min(gridWidth, (rawEnd + CHECKOUT_AT) * colPx) : endCol * colPx;
+                        if (right - left < 6) return null;
+                        const clippedLeft = showOverlap ? rawStart + CHECKIN_AT < 0 : rawStart < 0;
+                        const clippedRight = showOverlap ? (rawEnd + CHECKOUT_AT) * colPx > gridWidth : rawEnd > daysISO.length;
                         return (
                           <button
                             key={stay.id}
                             onClick={() => openEditStay(stay)}
-                            className={`flex items-center gap-1.5 truncate rounded-md border px-2 text-left text-[11px] font-medium leading-none hover-elevate ${PLATFORM_STYLES[platform]} ${stay.status === "tentative" ? "border-dashed opacity-80" : ""}`}
-                            style={{
-                              gridColumn: `${startCol + 1} / ${endCol + 1}`,
-                              gridRow: lane + 1,
-                            }}
+                            className={`absolute flex items-center gap-1.5 overflow-hidden border px-2 text-left text-[11px] font-medium leading-none hover-elevate hover:z-30 ${PLATFORM_STYLES[platform]} ${stay.status === "tentative" ? "border-dashed opacity-80" : ""} ${conflict ? "ring-2 ring-destructive z-20" : "z-10"} ${clippedLeft ? "rounded-l-none border-l-0" : "rounded-l-md"} ${clippedRight ? "rounded-r-none border-r-0" : "rounded-r-md"}`}
+                            style={{ position: "absolute", left, width: right - left, top: 6 + lane * LANE_PX, height: 28 }}
                             data-testid={`bar-stay-${stay.id}`}
-                            title={`${stay.guestName} \u2022 ${formatDateRange(stay.checkInDate, stay.checkOutDate)} \u2022 ${nights} night${nights === 1 ? "" : "s"} \u2022 ${PLATFORM_LABELS[platform]}`}
+                            title={`${stay.guestName} \u2022 ${formatDateRange(stay.checkInDate, stay.checkOutDate)} \u2022 ${nights} night${nights === 1 ? "" : "s"} \u2022 ${PLATFORM_LABELS[platform]}${conflict ? " \u2022 DOUBLE-BOOKED" : ""}`}
                           >
-                            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PLATFORM_DOT[platform]}`} aria-hidden />
+                            {conflict ? <AlertTriangle className="h-3 w-3 shrink-0 text-destructive" aria-hidden /> : <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${PLATFORM_DOT[platform]}`} aria-hidden />}
                             <span className="truncate">{stay.guestName}</span>
                           </button>
                         );
