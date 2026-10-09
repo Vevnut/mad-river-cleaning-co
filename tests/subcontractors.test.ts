@@ -86,7 +86,7 @@ try {
   check("deleting a job keeps payments but drops the assignment", del.status < 300 && kept.n === 2 && kept.unlinked === 2 && !db.prepare("SELECT 1 FROM job_subcontractors WHERE job_id=?").get(done));
   // Bed counts on properties (same disposable database).
   const { bedSummary, totalBeds } = await import("../shared/beds");
-  const beds = await call("PATCH", `/api/properties/${prop.id}`, { bedKing: 1, bedQueen: 2, bedBunk: 1 });
+  const beds = await call("PATCH", `/api/properties/${prop.id}`, { bedKing: 1, bedQueen: 2, bedFull: 0, bedTwin: 0, bedBunk: 1, bedSofa: 0 });
   check("bed counts save on a property", beds.status === 200 && beds.body.bedKing === 1 && beds.body.bedQueen === 2 && beds.body.bedTwin === 0);
   check("bed totals and summary read naturally", totalBeds(beds.body) === 4 && bedSummary(beds.body) === "1 King, 2 Queens, 1 Bunk bed");
   check("negative or fractional bed counts are refused", (await call("PATCH", `/api/properties/${prop.id}`, { bedTwin: -1 })).status === 400 && (await call("PATCH", `/api/properties/${prop.id}`, { bedTwin: 1.5 })).status === 400);

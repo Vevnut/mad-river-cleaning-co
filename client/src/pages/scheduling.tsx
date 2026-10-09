@@ -11,6 +11,9 @@ import { StatusBadge } from "@/components/status-badge";
 import { JobChip } from "@/components/scheduling/job-chip";
 import { JobFormDialog } from "@/components/jobs/job-form-dialog";
 import { JobDetailPopover } from "@/components/scheduling/job-detail-popover";
+import { GoogleCalendarDialog, GoogleEventChip, eventsByDay, type GoogleEvent } from "@/components/scheduling/google-calendar";
+import { Switch } from "@/components/ui/switch";
+import { apiRequest } from "@/lib/queryClient";
 
 type ViewMode = "day" | "week" | "month";
 
@@ -34,7 +37,7 @@ function addDays(d: Date, n: number) {
   return r;
 }
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const MONTH_DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]; // the month grid starts on Monday
 
 export default function SchedulingPage() {
   const [view, setView] = useState<ViewMode>("week");
@@ -46,6 +49,8 @@ export default function SchedulingPage() {
   const [newJobDate, setNewJobDate] = useState<string | undefined>(undefined);
   const [detailJobId, setDetailJobId] = useState<number | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [googleOpen, setGoogleOpen] = useState(false);
+  const [showGoogle, setShowGoogle] = useState(true);
 
   const todayISO = isoDate(new Date());
 
@@ -71,6 +76,26 @@ export default function SchedulingPage() {
     Array.from(map.values()).forEach((arr) => arr.sort((a: Job, b: Job) => a.scheduledTime.localeCompare(b.scheduledTime)));
     return map;
   }, [filteredJobs]);
+
+  // Visible date range, for Google Calendar events.
+  const [rangeFrom, rangeTo] = useMemo(() => {
+    if (view === "day") return [isoDate(anchor), isoDate(anchor)];
+    if (view === "week") { const s = startOfWeek(anchor); return [isoDate(s), isoDate(addDays(s, 6))]; }
+    const m = startOfMonth(anchor);
+    const g = new Date(m.getFullYear(), m.getMonth(), 1 - ((m.getDay() + 6) % 7));
+    return [isoDate(g), isoDate(addDays(g, 41))];
+  }, [view, anchor]);
+  const { data: googleSources = [] } = useQuery<{ id: number }[]>({ queryKey: ["/api/calendar/sources"] });
+  const { data: googleEvents = [] } = useQuery<GoogleEvent[]>({
+    queryKey: ["/api/calendar/events", rangeFrom, rangeTo],
+    queryFn: async () => (await apiRequest("GET", `/api/calendar/events?from=${rangeFrom}&to=${rangeTo}`)).json(),
+    enabled: googleSources.length > 0,
+    refetchInterval: 15 * 60 * 1000,
+  });
+  const googleByDate = useMemo(
+    () => (showGoogle && googleSources.length ? eventsByDay(googleEvents) : new Map<string, GoogleEvent[]>()),
+    [googleEvents, showGoogle, googleSources.length],
+  );
 
   const staffById = (id: number | null) => staffList.find((s) => s.id === id);
   const propertyById = (id: number) => properties.find((p) => p.id === id);
@@ -110,9 +135,14 @@ export default function SchedulingPage() {
     <div className="space-y-4 p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-xl font-semibold" data-testid="text-page-title">Scheduling</h1>
-        <Button size="sm" className="gap-1.5" onClick={() => openNewJob(todayISO)} data-testid="button-new-job">
-          <Plus className="h-3.5 w-3.5" /> New Job
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setGoogleOpen(true)} data-testid="button-google-calendar">
+            <CalendarDays className="h-3.5 w-3.5" /> Google Calendar
+          </Button>
+          <Button size="sm" className="gap-1.5" onClick={() => openNewJob(todayISO)} data-testid="button-new-job">
+            <Plus className="h-3.5 w-3.5" /> New Job
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -150,6 +180,12 @@ export default function SchedulingPage() {
             ))}
           </SelectContent>
         </Select>
+        {googleSources.length > 0 && (
+          <label className="ml-auto flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
+            <Switch checked={showGoogle} onCheckedChange={setShowGoogle} data-testid="switch-show-google" />
+            Google events
+          </label>
+        )}
       </div>
 
       {/* View toggle + nav */}
@@ -191,6 +227,7 @@ export default function SchedulingPage() {
         <DayView
           date={anchor}
           jobsByDate={jobsByDate}
+          googleByDate={googleByDate}
           staffById={staffById}
           propertyById={propertyById}
           onAddJob={openNewJob}
@@ -201,6 +238,7 @@ export default function SchedulingPage() {
           weekStart={startOfWeek(anchor)}
           todayISO={todayISO}
           jobsByDate={jobsByDate}
+          googleByDate={googleByDate}
           staffById={staffById}
           propertyById={propertyById}
           onAddJob={openNewJob}
@@ -211,6 +249,7 @@ export default function SchedulingPage() {
           monthStart={startOfMonth(anchor)}
           todayISO={todayISO}
           jobsByDate={jobsByDate}
+          googleByDate={googleByDate}
           staffById={staffById}
           onAddJob={openNewJob}
           onOpenJob={openDetail}
@@ -223,16 +262,18 @@ export default function SchedulingPage() {
         initialDate={newJobDate}
       />
       <JobDetailPopover jobId={detailJobId} open={detailOpen} onOpenChange={setDetailOpen} />
+      <GoogleCalendarDialog open={googleOpen} onOpenChange={setGoogleOpen} />
     </div>
   );
 }
 
 // ─── Day view ────────────────────────────────────────────────────────────────
 function DayView({
-  date, jobsByDate, staffById, propertyById, onAddJob, onOpenJob,
+  date, jobsByDate, googleByDate, staffById, propertyById, onAddJob, onOpenJob,
 }: {
   date: Date;
   jobsByDate: Map<string, Job[]>;
+  googleByDate: Map<string, GoogleEvent[]>;
   staffById: (id: number | null) => Staff | undefined;
   propertyById: (id: number) => Property | undefined;
   onAddJob: (date: string) => void;
@@ -240,15 +281,27 @@ function DayView({
 }) {
   const iso = isoDate(date);
   const jobs = jobsByDate.get(iso) ?? [];
+  const google = googleByDate.get(iso) ?? [];
+  const googleList = google.length > 0 && (
+    <div className="space-y-1.5" data-testid="list-day-google">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Google Calendar</p>
+      <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+        {google.map((e) => <GoogleEventChip key={e.id} event={e} day={iso} />)}
+      </div>
+    </div>
+  );
 
   if (jobs.length === 0) {
     return (
+      <div className="space-y-3">
       <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed py-16 text-center" data-testid="empty-day-view">
         <CalendarDays className="h-8 w-8 text-muted-foreground" />
         <p className="text-sm text-muted-foreground">No jobs scheduled for this day.</p>
         <Button size="sm" variant="outline" onClick={() => onAddJob(iso)} data-testid="button-add-job-day-empty">
           Schedule a Job
         </Button>
+      </div>
+      {googleList}
       </div>
     );
   }
@@ -279,17 +332,19 @@ function DayView({
           </div>
         );
       })}
+      {googleList}
     </div>
   );
 }
 
 // ─── Week view ───────────────────────────────────────────────────────────────
 function WeekView({
-  weekStart, todayISO, jobsByDate, staffById, propertyById, onAddJob, onOpenJob,
+  weekStart, todayISO, jobsByDate, googleByDate, staffById, propertyById, onAddJob, onOpenJob,
 }: {
   weekStart: Date;
   todayISO: string;
   jobsByDate: Map<string, Job[]>;
+  googleByDate: Map<string, GoogleEvent[]>;
   staffById: (id: number | null) => Staff | undefined;
   propertyById: (id: number) => Property | undefined;
   onAddJob: (date: string) => void;
@@ -315,9 +370,12 @@ function WeekView({
                 <p className={`text-sm font-bold ${isToday ? "text-primary" : ""}`}>{day.getDate()}</p>
               </div>
               <div className="flex-1 space-y-1 p-1.5 min-h-[220px]">
-                {dayJobs.map((job) => (
-                  <JobChip key={job.id} job={job} staff={staffById(job.assignedStaffId)} onClick={() => onOpenJob(job.id)} />
-                ))}
+                {(googleByDate.get(iso) ?? []).filter((e) => e.allDay).map((e) => <GoogleEventChip key={`g${e.id}`} event={e} day={iso} />)}
+                {mergeByTime(dayJobs, (googleByDate.get(iso) ?? []).filter((e) => !e.allDay)).map((item) =>
+                  "jobType" in item
+                    ? <JobChip key={item.id} job={item} staff={staffById(item.assignedStaffId)} onClick={() => onOpenJob(item.id)} />
+                    : <GoogleEventChip key={`g${item.id}`} event={item} day={iso} />,
+                )}
                 <button
                   onClick={() => onAddJob(iso)}
                   className="flex w-full items-center justify-center rounded-md border border-dashed border-border/60 py-1.5 text-muted-foreground/50 hover:text-muted-foreground hover:border-border transition-colors"
@@ -336,11 +394,12 @@ function WeekView({
 
 // ─── Month view ──────────────────────────────────────────────────────────────
 function MonthView({
-  monthStart, todayISO, jobsByDate, staffById, onAddJob, onOpenJob,
+  monthStart, todayISO, jobsByDate, googleByDate, staffById, onAddJob, onOpenJob,
 }: {
   monthStart: Date;
   todayISO: string;
   jobsByDate: Map<string, Job[]>;
+  googleByDate: Map<string, GoogleEvent[]>;
   staffById: (id: number | null) => Staff | undefined;
   onAddJob: (date: string) => void;
   onOpenJob: (id: number) => void;
@@ -393,9 +452,14 @@ function MonthView({
                   {dayJobs.slice(0, 3).map((job) => (
                     <JobChip key={job.id} job={job} staff={staffById(job.assignedStaffId)} onClick={() => onOpenJob(job.id)} compact />
                   ))}
-                  {dayJobs.length > 3 && (
-                    <p className="text-[10px] text-muted-foreground px-1">+{dayJobs.length - 3} more</p>
-                  )}
+                  {(googleByDate.get(iso) ?? []).slice(0, Math.max(0, 3 - dayJobs.length) || 1).map((e) => (
+                    <GoogleEventChip key={`g${e.id}`} event={e} day={iso} compact />
+                  ))}
+                  {(() => {
+                    const g = googleByDate.get(iso) ?? [];
+                    const hidden = Math.max(0, dayJobs.length - 3) + Math.max(0, g.length - (Math.max(0, 3 - dayJobs.length) || 1));
+                    return hidden > 0 && <p className="text-[10px] text-muted-foreground px-1">+{hidden} more</p>;
+                  })()}
                 </div>
               </div>
             );
@@ -404,4 +468,11 @@ function MonthView({
       </div>
     </div>
   );
+}
+
+/** Jobs and timed Google events in one list, earliest first. Uses New Hampshire wall-clock times. */
+function mergeByTime(jobs: Job[], events: GoogleEvent[]): (Job | GoogleEvent)[] {
+  const hhmm = (iso: string) => new Date(iso).toLocaleTimeString("en-GB", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+  return [...jobs.map((j) => ({ t: j.scheduledTime, item: j as Job | GoogleEvent })), ...events.map((e) => ({ t: hhmm(e.start), item: e as Job | GoogleEvent }))]
+    .sort((a, b) => a.t.localeCompare(b.t)).map((x) => x.item);
 }

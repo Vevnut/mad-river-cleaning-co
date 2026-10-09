@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { removeDemoCustomers } from "./demo-cleanup";
 
 /** Highest migration version below. Bump when adding a migration. */
-export const LATEST_MIGRATION = 9;
+export const LATEST_MIGRATION = 10;
 
 /**
  * Before any pending migration touches an existing database, save a full copy
@@ -204,6 +204,25 @@ export function migrate(sql: Database.Database) {
         job_id INTEGER REFERENCES jobs(id), note TEXT, created_at TEXT NOT NULL, created_by TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS subcontractor_payments_sub ON subcontractor_payments(subcontractor_id, paid_date);`);
       sql.prepare("INSERT INTO schema_migrations VALUES (9,?)").run(new Date().toISOString());
+    })();
+  }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=10").get()) {
+    sql.transaction(() => {
+      // Google Calendar: the private jobs link, and Google calendars read into the Scheduling page.
+      sql.exec(`CREATE TABLE IF NOT EXISTS calendar_feeds (
+        id INTEGER PRIMARY KEY, token TEXT NOT NULL UNIQUE, token_hash TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL, created_by TEXT NOT NULL, revoked_at TEXT, last_fetched_at TEXT);
+        CREATE TABLE IF NOT EXISTS calendar_sources (
+        id INTEGER PRIMARY KEY, name TEXT NOT NULL, url TEXT NOT NULL UNIQUE, color TEXT NOT NULL,
+        active INTEGER NOT NULL DEFAULT 1, last_synced_at TEXT, last_attempt_at TEXT, last_error TEXT,
+        event_count INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, created_by TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS calendar_events (
+        id INTEGER PRIMARY KEY, source_id INTEGER NOT NULL REFERENCES calendar_sources(id),
+        uid TEXT NOT NULL, title TEXT NOT NULL, location TEXT, all_day INTEGER NOT NULL DEFAULT 0,
+        start_at TEXT NOT NULL, end_at TEXT NOT NULL, start_day TEXT NOT NULL, end_day TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS calendar_events_days ON calendar_events(start_day, end_day);
+        CREATE INDEX IF NOT EXISTS calendar_events_source ON calendar_events(source_id);`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (10,?)").run(new Date().toISOString());
     })();
   }
 }

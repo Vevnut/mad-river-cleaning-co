@@ -17,6 +17,7 @@ npx tsx tests/invoice-delete.test.ts    # three-step invoice deletion rules
 npx tsx tests/expenses.test.ts          # mileage, supply costs and receipt photos
 npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed counts
 npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migration
+npx tsx tests/calendar.test.ts          # Google Calendar jobs link + Google events import (no network)
 ```
 
 ## Layout
@@ -38,6 +39,7 @@ npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migrat
 - Properties have bed counts by type (`bed_king` … `bed_sofa`); helpers in `shared/beds.ts`.
 - Photo/receipt uploads must pass `isJpeg` (server/jpeg.ts, full marker walk) and are served with `IMAGE_HEADERS` (nosniff + sandbox CSP). Test fixture: tests/fixtures/tiny.jpg.
 - Migrations: bump `LATEST_MIGRATION` in `server/migrations.ts` with each new one. On startup, any pending upgrade first saves `backups/before-upgrade-v<from>-to-v<to>-<time>.db` (git-ignored).
+- Google Calendar (`server/calendar.ts`, `client/src/components/scheduling/google-calendar.tsx`): (1) jobs → Google via a private iCal link `/api/calendar/feed/<48-hex>.ics`, registered BEFORE `protect()`; the token is the only key, reset revokes it; the feed leaves out prices, notes and canceled jobs; times are America/New_York. (2) Google → app by pasting a calendar's "Secret address in iCal format"; only `https://calendar.google.com/calendar/ical/...` is fetched (no redirects, 8 MB / 20 s limits), parsed with ical.js (repeats expanded, 60 days back to 400 ahead) into `calendar_events`, refreshed when older than 15 minutes. Read-only: nothing is written to Google. The published app must stay Public for Google to read the jobs link.
 - Revenue is invoice totals by issue date, excluding canceled invoices; weeks run Monday to Sunday (`client/src/lib/revenue.ts`).
 - Deleting an invoice takes three steps (review, "I understand", type the invoice number) and saves a full copy in `deleted_invoices`. Invoices with Stripe card payments cannot be deleted.
 - Invoices keep the prices saved on them. Changing a service or property price must never change existing invoices.
