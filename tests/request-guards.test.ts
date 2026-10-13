@@ -21,6 +21,7 @@ app.set("trust proxy", 1); // same as server/index.ts behind the host's proxy
 app.use(express.json());
 const server = createServer(app);
 await registerRoutes(server, app);
+app.get("/test/crash-500", () => { throw Object.assign(new Error("SQLITE_IOERR at /srv/data.db secret_path"), { status: 500 }); });
 app.get("/test/crash", () => { throw new TypeError("Cannot read properties of undefined (reading 'secret_column')"); });
 app.use(errorHandler); // the real handler from server/index.ts
 await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
@@ -47,6 +48,8 @@ try {
   // Unexpected crashes don't show internal details; known database conflicts get a clear message.
   const crash = await call("GET", "/test/crash");
   check("a crash returns a plain message without internal details", crash.status === 500 && !crash.body.message.includes("secret_column"));
+  const crash500 = await call("GET", "/test/crash-500");
+  check("a server error with a status still hides internal details", crash500.status === 500 && !crash500.body.message.includes("secret_path"));
   const dupe = await call("POST", "/api/team", { email, password });
   check("adding an account that exists says so", dupe.status === 409 && dupe.body.message === "An account with this email already exists.");
 

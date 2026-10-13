@@ -12,7 +12,8 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
   // Errors thrown on purpose (fail(), http-errors) carry a status and a message meant for people.
   // Anything without one is an unexpected crash, and its raw text stays out of the response.
   let status = err.status || err.statusCode || 500;
-  let message = err.status || err.statusCode ? err.message : "Something went wrong. Please try again.";
+  // Server-side (5xx) errors always get the generic text, even if they carry a status.
+  let message = (err.status || err.statusCode) && status < 500 ? err.message : "Something went wrong. Please try again.";
   const code = String(err.code || "");
   if (err.name === "ZodError") {
     status = 400;
