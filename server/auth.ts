@@ -8,13 +8,16 @@ const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const passwordHash = (password: string, salt = randomBytes(16).toString("hex")) =>
   `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
-const limitAttempt = sqlite.transaction((key: string) => {
+const limitAttempt = sqlite.transaction((key: string, max: number) => {
   const time = Date.now();
   sqlite.prepare("DELETE FROM auth_rate_limits WHERE resets_at<?").run(time);
   sqlite.prepare(`INSERT INTO auth_rate_limits VALUES (?,1,?)
     ON CONFLICT(key) DO UPDATE SET count=count+1`).run(key, time + 900000);
-  return (sqlite.prepare("SELECT count FROM auth_rate_limits WHERE key=?").get(key) as any).count <= 20;
+  return (sqlite.prepare("SELECT count FROM auth_rate_limits WHERE key=?").get(key) as any).count <= max;
 });
+// Per visitor IP (needs `trust proxy` in server/index.ts), plus a looser per-account
+// limit so rotating or spoofed IPs can't guess one password without bound.
+const IP_ATTEMPTS = 20, ACCOUNT_ATTEMPTS = 50;
 
 export function registerAuth(app: Express) {
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
@@ -24,10 +27,12 @@ export function registerAuth(app: Express) {
   }));
   app.post("/api/auth/:action", (req, res) => {
     const key = hash(req.ip || "unknown");
-    if (!limitAttempt(key)) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
+    if (!limitAttempt(key, IP_ATTEMPTS)) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
     const parsed = credentials.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ message: "Enter a valid email and a password of 12–128 characters." });
     const { email, password } = parsed.data;
+    const accountKey = hash(`account:${email}`);
+    if (!limitAttempt(accountKey, ACCOUNT_ATTEMPTS)) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
     if (req.params.action === "setup") {
       const expected = process.env.AUTH_SETUP_TOKEN_HASH || (process.env.AUTH_SETUP_TOKEN ? hash(process.env.AUTH_SETUP_TOKEN) : "");
       const provided = hash(String(req.body.setupToken || ""));
@@ -45,7 +50,7 @@ export function registerAuth(app: Express) {
     const token = randomBytes(32).toString("hex");
     sqlite.prepare("DELETE FROM auth_sessions WHERE expires_at<?").run(Date.now());
     sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, Date.now() + 12 * 3600000);
-    sqlite.prepare("DELETE FROM auth_rate_limits WHERE key=?").run(key);
+    sqlite.prepare("DELETE FROM auth_rate_limits WHERE key IN (?,?)").run(key, accountKey);
     res.json({ token, email, organizationId });
   });
   // Dedicated organization database: every private route belongs to its immutable

@@ -62,6 +62,14 @@ try {
     && JSON.parse((db.prepare("SELECT snapshot FROM deleted_invoices WHERE invoice_id=?").get(b.id) as any).snapshot).payments.length === 1);
 
   const c = await make();
+  check("a new invoice never reuses a deleted invoice's number", !!c.invoiceNumber && ![a.invoiceNumber, b.invoiceNumber].includes(c.invoiceNumber));
+  // Give an invoice, by hand, the exact number the next automatic one would get.
+  const slot = n(`SELECT MAX(COALESCE((SELECT MAX(id) FROM invoices),0), COALESCE((SELECT MAX(invoice_id) FROM deleted_invoices),0))+1 n`);
+  const typed = c.invoiceNumber.replace(/\d+$/, (d: string) => String(slot).padStart(d.length, "0"));
+  db.prepare("UPDATE invoices SET invoice_number=? WHERE id=?").run(typed, c.id);
+  const after = await make();
+  check("the next automatic number skips a hand-typed one", !!after.id && after.invoiceNumber !== typed);
+  c.invoiceNumber = typed;
   db.prepare("INSERT INTO payments (invoice_id, amount, method, paid_date, provider, provider_transaction_id, status, created_at) VALUES (?,?,?,?,?,?,?,?)")
     .run(c.id, 120, "card", "2026-09-21", "stripe", "pi_test_only", "succeeded", new Date().toISOString());
   check("an invoice with a Stripe card payment is refused", (await call("POST", `/api/invoices/${c.id}/delete`, { confirmInvoiceNumber: c.invoiceNumber, understood: true })).status === 409

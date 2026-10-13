@@ -19,6 +19,7 @@ npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed
 npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migration
 npx tsx tests/calendar.test.ts          # Google Calendar jobs link + Google events import (no network)
 npx tsx tests/data-import.test.ts       # one-time database move (import/data-import.sqlite-import)
+npx tsx tests/request-guards.test.ts    # sign-in rate limits behind the proxy, requests with no body
 ```
 
 ## Layout

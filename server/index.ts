@@ -8,6 +8,11 @@ import { createServer } from "node:http";
 const app = express();
 const httpServer = createServer(app);
 
+// The host serves the app through a reverse proxy. Without this, req.ip is the proxy's
+// address for every visitor, so all sign-ins share one rate-limit bucket.
+const trustProxy = process.env.TRUST_PROXY || "1";
+app.set("trust proxy", /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy);
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;

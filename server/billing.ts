@@ -100,6 +100,16 @@ function assertUnlocked(id: number) {
   if (rows("invoice_sends", "invoice_id=? AND status='pending'", id).length)
     fail(409, "An invoice email is pending. Retry that exact send before editing.");
 }
+/** Never reuses a number, including ones on deleted invoices or typed in by hand. */
+function nextInvoiceNumber() {
+  const prefix = `${rows("app_settings")[0]?.invoiceNumberPrefix || "INV"}-${new Date().getFullYear()}-`;
+  let n = (sql.prepare(`SELECT MAX(COALESCE((SELECT MAX(id) FROM invoices),0),
+    COALESCE((SELECT MAX(invoice_id) FROM deleted_invoices),0))+1 n`).get() as any).n as number;
+  const taken = sql.prepare("SELECT 1 FROM invoices WHERE invoice_number=@number UNION ALL SELECT 1 FROM deleted_invoices WHERE invoice_number=@number");
+  const number = () => prefix + String(n).padStart(5, "0");
+  while (taken.get({ number: number() })) n++;
+  return number();
+}
 export function saveInvoice(input: any, id?: number, actor?: string) {
   return sql.transaction(() => {
     const d = invoiceSchema.parse(input);
@@ -150,7 +160,7 @@ export function saveInvoice(input: any, id?: number, actor?: string) {
     const { items: _, requestKey, ...fields } = d;
     const address = p ? [p.name, p.addressLine1, p.addressLine2, `${p.city}, ${p.state} ${p.zip}`].filter(Boolean).join("\n") : "";
     const saved = {
-      ...fields, invoiceNumber: d.invoiceNumber || `${rows("app_settings")[0]?.invoiceNumberPrefix || "INV"}-${new Date().getFullYear()}-${String((sql.prepare("SELECT COALESCE(MAX(id),0)+1 n FROM invoices").get() as any).n).padStart(5, "0")}`,
+      ...fields, invoiceNumber: d.invoiceNumber || nextInvoiceNumber(),
       subtotal: dollars(subtotal), total: dollars(total), taxRate: 0, taxAmount: 0, updatedAt: now(),
       propertyAddress: old && old.propertyId === d.propertyId ? old.propertyAddress : address,
       customerSnapshot: old && old.customerId === d.customerId ? old.customerSnapshot : JSON.stringify(customer),

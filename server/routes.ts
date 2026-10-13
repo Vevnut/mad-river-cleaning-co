@@ -57,7 +57,8 @@ export async function registerRoutes(
     if (!["POST", "PATCH"].includes(req.method)) return next();
     const id = Number(req.path.slice(1));
     const old = id ? await storage.getProperty(id) : undefined;
-    const b = req.body;
+    // Express 5 leaves req.body undefined when no JSON body is sent.
+    const b = (req.body ??= {});
     if ("fullBathrooms" in b || "halfBathrooms" in b) {
       const full = b.fullBathrooms ?? old?.fullBathrooms ?? 0, half = b.halfBathrooms ?? old?.halfBathrooms ?? 0;
       if (!Number.isInteger(full) || !Number.isInteger(half) || full < 0 || half < 0)
@@ -74,7 +75,7 @@ export async function registerRoutes(
   app.use("/api/jobs", async (req, res, next) => {
     if (!["POST", "PATCH"].includes(req.method)) return next();
     const old = Number(req.path.slice(1)) ? await storage.getJob(Number(req.path.slice(1))) : undefined;
-    const b = req.body, property = await storage.getProperty(b.propertyId ?? old?.propertyId ?? 0);
+    const b = (req.body ??= {}), property = await storage.getProperty(b.propertyId ?? old?.propertyId ?? 0);
     if (!property) return res.status(400).json({ message: "Select an existing property." });
     if (b.customerId && b.customerId !== property.customerId) return res.status(400).json({ message: "Job owner must match property owner." });
     b.customerId = property.customerId;
