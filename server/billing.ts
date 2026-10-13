@@ -236,7 +236,8 @@ function printable(inv: any) {
   const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : one("customers", inv.customerId);
   const settings = rows("app_settings")[0];
   return renderInvoicePrintHtml({ invoice: inv, customer, items: rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id), business: settings })
-    .replace('<table>', `<div class="notes-block"><strong>Service property</strong><br>${esc(inv.propertyAddress || "").replace(/\n/g, "<br>")}</div><table>`);
+    // A replacer function, so a "$&" or "$'" in an address is inserted as plain text.
+    .replace('<table>', () => `<div class="notes-block"><strong>Service property</strong><br>${esc(inv.propertyAddress || "").replace(/\n/g, "<br>")}</div><table>`);
 }
 export function completeCheckout(session: any, eventId: string) {
   return sql.transaction(() => {

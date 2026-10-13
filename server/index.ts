@@ -1,7 +1,7 @@
 import "dotenv/config";
-import express, { Response, NextFunction } from 'express';
-import type { Request } from 'express';
+import express from 'express';
 import { registerRoutes } from "./routes";
+import { errorHandler } from "./errors";
 import { serveStatic } from "./static";
 import { createServer } from "node:http";
 
@@ -59,33 +59,7 @@ app.use((req, res, next) => {
 (async () => {
   await registerRoutes(httpServer, app);
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
-    let status = err.status || err.statusCode || 500;
-    let message = err.message || "Internal Server Error";
-    if (err.name === "ZodError") {
-      status = 400;
-      message = err.issues.map((i: any) => `${i.path.join(".")}: ${i.message}`).join("; ");
-    }
-    if (err.code === "SQLITE_CONSTRAINT_UNIQUE") {
-      status = 409; message = "This invoice number, account, or property service already exists.";
-    }
-
-    // Safety net: any raw SQLite foreign-key violation that slips through
-    // (i.e. wasn't already turned into a DeleteConflictError upstream) gets
-    // a friendly 409 instead of a generic 500.
-    if (err.code === "SQLITE_CONSTRAINT_FOREIGNKEY" || err.code === "SQLITE_CONSTRAINT") {
-      status = 409;
-      message = "This item is still linked to other records, so it can't be deleted. Remove or reassign those first.";
-    }
-
-    console.error("Internal Server Error:", err);
-
-    if (res.headersSent) {
-      return next(err);
-    }
-
-    return res.status(status).json({ message });
-  });
+  app.use(errorHandler);
 
   // importantly only setup vite in development and after
   // setting up all the other routes so the catch-all route

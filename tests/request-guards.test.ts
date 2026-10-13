@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import express from "express";
 import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
+import { errorHandler } from "../server/errors";
 
 // Disposable copy of the database. Never touches real data.
 mkdirSync("tests/.data", { recursive: true });
@@ -20,7 +21,8 @@ app.set("trust proxy", 1); // same as server/index.ts behind the host's proxy
 app.use(express.json());
 const server = createServer(app);
 await registerRoutes(server, app);
-app.use((err: any, _req: any, res: any, _next: any) => res.status(err.status || err.statusCode || 500).json({ message: err.message }));
+app.get("/test/crash", () => { throw new TypeError("Cannot read properties of undefined (reading 'secret_column')"); });
+app.use(errorHandler); // the real handler from server/index.ts
 await new Promise<void>(r => server.listen(0, "127.0.0.1", r));
 const base = `http://127.0.0.1:${(server.address() as any).port}`;
 let token = "", count = 0;
@@ -41,6 +43,20 @@ try {
   // Requests with no body used to crash the property/job checks with a 500.
   check("adding a property with no body is a 400, not a crash", (await call("POST", "/api/properties")).status === 400);
   check("adding a job with no body is a 400, not a crash", (await call("POST", "/api/jobs")).status === 400);
+
+  // Unexpected crashes don't show internal details; known database conflicts get a clear message.
+  const crash = await call("GET", "/test/crash");
+  check("a crash returns a plain message without internal details", crash.status === 500 && !crash.body.message.includes("secret_column"));
+  const dupe = await call("POST", "/api/team", { email, password });
+  check("adding an account that exists says so", dupe.status === 409 && dupe.body.message === "An account with this email already exists.");
+
+  // "$'" and "$&" in a property name used to splice extra HTML into the printed invoice.
+  const p = db.prepare("SELECT id, customer_id FROM properties ORDER BY id LIMIT 1").get() as any;
+  db.prepare("UPDATE properties SET name=? WHERE id=?").run("Cabin $' Lodge", p.id);
+  const inv = (await call("POST", "/api/invoices", { customerId: p.customer_id, propertyId: p.id, issueDate: "2026-09-20", dueDate: "2026-10-05",
+    items: [{ description: "Test clean", quantity: 1, unitPrice: 120 }] })).body;
+  const print = await fetch(`${base}/api/invoices/${inv.id}/print`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.text());
+  check("a property name with $ prints exactly as typed", print.includes("Cabin $&#39; Lodge") && !print.includes("Cabin <table>"));
   token = "";
 
   // Behind the proxy each visitor gets their own sign-in limit.
