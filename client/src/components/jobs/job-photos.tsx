@@ -14,25 +14,26 @@ import {
 } from "@/components/ui/alert-dialog";
 
 type Section = "damage" | "final_walkthrough";
-type Photo = { id: number; jobId: number; section: Section; originalName: string; size: number; createdAt: string; createdBy: string };
+// Office photos say who added them; cleaner photos (apiBase "/api/cleaner") say whether it was you.
+export type Photo = { id: number; jobId: number; section: Section; originalName: string; size: number; createdAt: string; createdBy?: string; mine?: boolean };
 
 /** Photos are private, so they're fetched with the sign-in header rather than a public URL. */
-function usePhotoUrl(id: number) {
+function usePhotoUrl(id: number, apiBase: string) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let revoked = false, objectUrl = "";
-    fetch(apiUrl(`/api/job-photos/${id}/file`), { headers: authHeaders() as HeadersInit })
+    fetch(apiUrl(`${apiBase}/job-photos/${id}/file`), { headers: authHeaders() as HeadersInit })
       .then(r => (r.ok ? r.blob() : Promise.reject()))
       .then(b => { if (!revoked) { objectUrl = URL.createObjectURL(b); setSrc(objectUrl); } })
       .catch(() => !revoked && setFailed(true));
     return () => { revoked = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [id]);
+  }, [id, apiBase]);
   return { src, failed };
 }
 
-function Thumb({ photo, onOpen, onDelete }: { photo: Photo; onOpen: (src: string) => void; onDelete: () => void }) {
-  const { src, failed } = usePhotoUrl(photo.id);
+function Thumb({ photo, apiBase, onOpen, onDelete }: { photo: Photo; apiBase: string; onOpen: (src: string) => void; onDelete?: () => void }) {
+  const { src, failed } = usePhotoUrl(photo.id, apiBase);
   return (
     <div className="group relative aspect-square overflow-hidden rounded-md border bg-muted">
       {src ? (
@@ -44,27 +45,31 @@ function Thumb({ photo, onOpen, onDelete }: { photo: Photo; onOpen: (src: string
           {failed ? "Unavailable" : <Loader2 className="h-4 w-4 animate-spin" />}
         </div>
       )}
-      <button
-        onClick={onDelete}
-        className="absolute right-1 top-1 rounded-full bg-background/90 p-1 text-foreground shadow-sm"
-        aria-label={`Delete ${photo.originalName}`}
-        data-testid={`button-delete-photo-${photo.id}`}
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
+      {onDelete && (
+        <button
+          onClick={onDelete}
+          className="absolute right-1 top-1 rounded-full bg-background/90 p-1 text-foreground shadow-sm"
+          aria-label={`Delete ${photo.originalName}`}
+          data-testid={`button-delete-photo-${photo.id}`}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      )}
     </div>
   );
 }
 
-function PhotoSection({ jobId, section, title, description, icon, photos, children }: {
+type Access = { apiBase: string; readOnly: boolean; canDelete: (p: Photo) => boolean };
+
+function PhotoSection({ jobId, section, title, description, icon, photos, children, apiBase, readOnly, canDelete }: {
   jobId: number; section: Section; title: string; description: string; icon: React.ReactNode; photos: Photo[]; children?: React.ReactNode;
-}) {
+} & Access) {
   const { toast } = useToast();
   const input = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(0);
   const [viewing, setViewing] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Photo | null>(null);
-  const key = ["/api/jobs", jobId, "photos"];
+  const key = [`${apiBase}/jobs`, jobId, "photos"];
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
@@ -74,7 +79,7 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
     for (const file of list) {
       try {
         const blob = await toJpeg(file);
-        const res = await fetch(apiUrl(`/api/jobs/${jobId}/photos?section=${section}&name=${encodeURIComponent(file.name)}`), {
+        const res = await fetch(apiUrl(`${apiBase}/jobs/${jobId}/photos?section=${section}&name=${encodeURIComponent(file.name)}`), {
           method: "POST", headers: { ...authHeaders(), "Content-Type": "image/jpeg" } as HeadersInit, body: blob,
         });
         if (!res.ok) throw new Error((await res.json().catch(() => null))?.message || "Upload failed.");
@@ -91,7 +96,7 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
   };
 
   const remove = useMutation({
-    mutationFn: async (id: number) => apiRequest("DELETE", `/api/job-photos/${id}`),
+    mutationFn: async (id: number) => apiRequest("DELETE", `${apiBase}/job-photos/${id}`),
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: key }); toast({ title: "Photo deleted" }); },
     onError: (err: Error) => toast({ title: "Couldn't delete photo", description: err.message, variant: "destructive" }),
     onSettled: () => setDeleting(null),
@@ -106,8 +111,8 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
       <CardContent className="space-y-3">
         {children}
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {photos.map(p => <Thumb key={p.id} photo={p} onOpen={setViewing} onDelete={() => setDeleting(p)} />)}
-          <button
+          {photos.map(p => <Thumb key={p.id} photo={p} apiBase={apiBase} onOpen={setViewing} onDelete={!readOnly && canDelete(p) ? () => setDeleting(p) : undefined} />)}
+          {!readOnly && <button
             onClick={() => input.current?.click()}
             disabled={uploading > 0}
             className="flex aspect-square flex-col items-center justify-center gap-1 rounded-md border border-dashed text-muted-foreground hover-elevate disabled:opacity-60"
@@ -115,7 +120,7 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
           >
             {uploading ? <Loader2 className="h-5 w-5 animate-spin" /> : <ImagePlus className="h-5 w-5" />}
             <span className="text-[10px]">{uploading ? `Adding ${uploading}…` : "Add Photos"}</span>
-          </button>
+          </button>}
         </div>
         <input
           ref={input} type="file" accept="image/*" multiple className="hidden"
@@ -147,13 +152,14 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
   );
 }
 
-export function JobPhotos({ jobId, damageNotes, onSaveDamageNotes, saving }: {
+export function JobPhotos({ jobId, damageNotes, onSaveDamageNotes, saving, apiBase = "/api", readOnly = false, canDelete = () => true }: {
   jobId: number; damageNotes: string | null; onSaveDamageNotes: (notes: string) => void; saving: boolean;
-}) {
+} & Partial<Access>) {
   const { data: photos = [] } = useQuery<Photo[]>({
-    queryKey: ["/api/jobs", jobId, "photos"],
-    queryFn: async () => (await apiRequest("GET", `/api/jobs/${jobId}/photos`)).json(),
+    queryKey: [`${apiBase}/jobs`, jobId, "photos"],
+    queryFn: async () => (await apiRequest("GET", `${apiBase}/jobs/${jobId}/photos`)).json(),
   });
+  const access = { apiBase, readOnly, canDelete };
   const [notes, setNotes] = useState(damageNotes ?? "");
   useEffect(() => setNotes(damageNotes ?? ""), [damageNotes]);
   const changed = notes !== (damageNotes ?? "");
@@ -164,9 +170,11 @@ export function JobPhotos({ jobId, damageNotes, onSaveDamageNotes, saving }: {
         jobId={jobId} section="damage" title="Damage"
         description="Record anything damaged, broken or missing. Only you and your team can see these."
         icon={<AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-500" />}
-        photos={photos.filter(p => p.section === "damage")}
+        photos={photos.filter(p => p.section === "damage")} {...access}
       >
-        <div className="space-y-2">
+        {readOnly ? (
+          notes ? <p className="whitespace-pre-wrap text-sm">{notes}</p> : null
+        ) : <div className="space-y-2">
           <Textarea
             value={notes} onChange={e => setNotes(e.target.value)} rows={3} className="text-sm"
             placeholder="What's damaged, where, and when it was found"
@@ -182,13 +190,13 @@ export function JobPhotos({ jobId, damageNotes, onSaveDamageNotes, saving }: {
               </Button>
             )}
           </div>
-        </div>
+        </div>}
       </PhotoSection>
       <PhotoSection
         jobId={jobId} section="final_walkthrough" title="Final Walkthrough"
         description="Photos of the finished clean before you leave. Only you and your team can see these."
         icon={<ClipboardCheck className="h-4 w-4 text-primary" />}
-        photos={photos.filter(p => p.section === "final_walkthrough")}
+        photos={photos.filter(p => p.section === "final_walkthrough")} {...access}
       />
     </div>
   );

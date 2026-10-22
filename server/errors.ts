@@ -4,6 +4,8 @@ import type { Request, Response, NextFunction } from "express";
 const DUPLICATES: [string, string][] = [
   ["invoices.invoice_number", "This invoice number is already used. Choose a different number."],
   ["auth_users.email", "An account with this email already exists."],
+  ["auth_users.staff_id", "This person already has a cleaner login."],
+  ["auth_users.subcontractor_id", "This person already has a cleaner login."],
   ["property_services.", "This property already has that service."],
 ];
 

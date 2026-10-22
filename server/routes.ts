@@ -33,6 +33,7 @@ import { registerJobPhotos } from "./job-photos";
 import { registerExpenses } from "./expenses";
 import { registerSubcontractors } from "./subcontractors";
 import { registerCalendar, registerPublicCalendar } from "./calendar";
+import { registerCleaner } from "./cleaner";
 
 // NOTE: drizzle-zod@0.7.1 + zod@4.4.3 infer enum-typed insert schema fields as
 // a broken union (see SCHEMA.md). Runtime validation via `safeParse` below is
@@ -52,6 +53,7 @@ export async function registerRoutes(
   registerExpenses(app);
   registerSubcontractors(app);
   registerCalendar(app);
+  registerCleaner(app);
   // Normalize legacy fields without ever touching existing invoice snapshots.
   app.use("/api/properties", async (req, res, next) => {
     if (!["POST", "PATCH"].includes(req.method)) return next();

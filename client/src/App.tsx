@@ -30,6 +30,7 @@ import SubcontractorsPage from "@/pages/subcontractors";
 import SubcontractorDetailPage from "@/pages/subcontractor-detail";
 import SettingsPage from "@/pages/settings";
 import { AuthGate } from "@/components/auth-gate";
+import { CleanerShell } from "@/components/cleaner-shell";
 import PublicInvoicePage from "@/pages/public-invoice";
 
 function AppRouter({
@@ -82,7 +83,7 @@ function App() {
           <Router hook={useHashLocation}>
             <Switch>
               <Route path="/pay/:token" component={PublicInvoicePage} />
-              <Route><AuthGate>
+              <Route><AuthGate>{session => session.role === "cleaner" ? <CleanerShell email={session.email} /> : <>
             <SidebarProvider style={style as React.CSSProperties}>
               <div className="flex h-screen w-full overflow-hidden">
                 <AppSidebar />
@@ -102,7 +103,7 @@ function App() {
             </SidebarProvider>
             <CustomerFormDialog open={newCustomerOpen} onOpenChange={setNewCustomerOpen} />
             <PropertyFormDialog open={newPropertyOpen} onOpenChange={setNewPropertyOpen} />
-            </AuthGate></Route>
+            </>}</AuthGate></Route>
             </Switch>
           </Router>
           <Toaster />

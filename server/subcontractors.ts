@@ -57,12 +57,16 @@ const exists = (table: string, id: number) => !!sqlite.prepare(`SELECT 1 FROM ${
 const earnedIn = EARNED_STATUSES.map(s => `'${s}'`).join(",");
 
 function withTotals(r: any) {
-  const id = r.id, year = today().slice(0, 4);
+  return { ...sub(r), ...subcontractorPay(r.id) };
+}
+/** Pay totals for one subcontractor. Also shown to them on their own cleaner page. */
+export function subcontractorPay(id: number) {
+  const year = today().slice(0, 4);
   const earned = (sqlite.prepare(`SELECT coalesce(sum(a.pay),0) v, count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN (${earnedIn})`).get(id) as any);
   const upcoming = (sqlite.prepare(`SELECT count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN ('scheduled','in_progress')`).get(id) as any).n;
   const paid = (sqlite.prepare("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=?").get(id) as any).v;
   const paidThisYear = (sqlite.prepare("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=? AND paid_date>=? AND paid_date<=?").get(id, `${year}-01-01`, `${year}-12-31`) as any).v;
-  return { ...sub(r), earned: cents(earned.v), completedJobs: earned.n, upcomingJobs: upcoming, paid: cents(paid), owed: cents(earned.v - paid), paidThisYear: cents(paidThisYear) };
+  return { earned: cents(earned.v), completedJobs: earned.n, upcomingJobs: upcoming, paid: cents(paid), owed: cents(earned.v - paid), paidThisYear: cents(paidThisYear) };
 }
 const columns = (d: z.infer<typeof subSchema>) => ({
   name: d.name, business_name: d.businessName, email: d.email, phone: d.phone, services: d.services, pay_type: d.payType,

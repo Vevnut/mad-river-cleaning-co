@@ -20,6 +20,7 @@ npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migrat
 npx tsx tests/calendar.test.ts          # Google Calendar jobs link + Google events import (no network)
 npx tsx tests/data-import.test.ts       # one-time database move (import/data-import.sqlite-import)
 npx tsx tests/request-guards.test.ts    # sign-in rate limits, requests with no body, error messages, $ in printed invoices
+npx tsx tests/cleaner.test.ts           # cleaner logins: what they can and can't see or change
 ```
 
 ## Layout
@@ -34,6 +35,7 @@ npx tsx tests/request-guards.test.ts    # sign-in rate limits, requests with no 
 - **Business data is not in this repository.** `data.db`, backups, `uploads/` (job photos) and `.env` are ignored and must never be committed.
 - **Database changes are additive only.** Add a new numbered block to `server/migrations.ts`. Never drop tables, rebuild tables or run `drizzle-kit push` against real data.
 - **Every `/api` route except sign-in, public invoice links and the Stripe webhook requires sign-in.** Keep new private routes behind the `protect()` gate in `server/auth.ts`.
+- **Cleaner logins see only their own jobs.** Accounts are `owner` (full access) or `cleaner` (linked to one staff member or one subcontractor; migration 11). `protect()` lets cleaner accounts reach only `/api/cleaner/*` and `/api/logout`, so new private routes are owner-only by default. Cleaner routes live in `server/cleaner.ts`, must check the job is theirs (assigned staff or job subcontractor), and must never return prices, invoices, customer contact details, internal notes, guest names/phones or other cleaners' jobs. Owners manage logins in Settings → Cleaner Logins (`/api/team/cleaners`).
 - **Secrets stay server-side.** Stripe and email keys come from environment variables only (see `.env.example`).
 - **API URLs in the frontend use the `__PORT_5000__` placeholder.** The hosting platform rewrites it; don't replace it with a hard-coded URL.
 - Expenses (`server/expenses.ts`, `shared/expenses.ts`): mileage uses the IRS business rate for the trip date from `IRS_MILEAGE_RATES` (add new rates there); receipts live in `uploads/expense-receipts`. Profit = revenue minus expenses.

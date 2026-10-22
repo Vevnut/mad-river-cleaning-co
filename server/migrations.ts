@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { removeDemoCustomers } from "./demo-cleanup";
 
 /** Highest migration version below. Bump when adding a migration. */
-export const LATEST_MIGRATION = 10;
+export const LATEST_MIGRATION = 11;
 
 /**
  * Before any pending migration touches an existing database, save a full copy
@@ -223,6 +223,20 @@ export function migrate(sql: Database.Database) {
         CREATE INDEX IF NOT EXISTS calendar_events_days ON calendar_events(start_day, end_day);
         CREATE INDEX IF NOT EXISTS calendar_events_source ON calendar_events(source_id);`);
       sql.prepare("INSERT INTO schema_migrations VALUES (10,?)").run(new Date().toISOString());
+    })();
+  }
+  if (!sql.prepare("SELECT 1 FROM schema_migrations WHERE version=11").get()) {
+    sql.transaction(() => {
+      // Cleaner logins: an account is either an owner (full access, every account so far)
+      // or a cleaner linked to one staff member or one subcontractor (server/cleaner.ts).
+      const cols = new Set((sql.prepare("PRAGMA table_info(auth_users)").all() as any[]).map(c => c.name));
+      if (!cols.has("role")) sql.exec("ALTER TABLE auth_users ADD COLUMN role TEXT NOT NULL DEFAULT 'owner' CHECK(role IN ('owner','cleaner'))");
+      if (!cols.has("staff_id")) sql.exec("ALTER TABLE auth_users ADD COLUMN staff_id INTEGER REFERENCES staff(id)");
+      if (!cols.has("subcontractor_id")) sql.exec("ALTER TABLE auth_users ADD COLUMN subcontractor_id INTEGER REFERENCES subcontractors(id)");
+      sql.exec(`CREATE UNIQUE INDEX IF NOT EXISTS auth_users_staff ON auth_users(staff_id) WHERE staff_id IS NOT NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS auth_users_subcontractor ON auth_users(subcontractor_id) WHERE subcontractor_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS jobs_assigned_staff ON jobs(assigned_staff_id);`);
+      sql.prepare("INSERT INTO schema_migrations VALUES (11,?)").run(new Date().toISOString());
     })();
   }
 }

@@ -7,7 +7,6 @@ export const organizationId = (sqlite.prepare("SELECT id FROM organization WHERE
 const hash = (s: string) => createHash("sha256").update(s).digest("hex");
 const passwordHash = (password: string, salt = randomBytes(16).toString("hex")) =>
   `${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
-const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
 const limitAttempt = sqlite.transaction((key: string, max: number) => {
   const time = Date.now();
   sqlite.prepare("DELETE FROM auth_rate_limits WHERE resets_at<?").run(time);
@@ -18,6 +17,22 @@ const limitAttempt = sqlite.transaction((key: string, max: number) => {
 // Per visitor IP (needs `trust proxy` in server/index.ts), plus a looser per-account
 // limit so rotating or spoofed IPs can't guess one password without bound.
 const IP_ATTEMPTS = 20, ACCOUNT_ATTEMPTS = 50;
+
+export const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
+/** Owner accounts have full access; cleaner accounts are linked to one staff member or subcontractor. */
+export function createAccount(email: string, password: string, cleaner?: { staffId?: number | null; subcontractorId?: number | null }) {
+  const id = randomUUID();
+  sqlite.prepare(`INSERT INTO auth_users (id,organization_id,email,password_hash,active,role,staff_id,subcontractor_id)
+    VALUES (?,?,?,?,1,?,?,?)`).run(id, organizationId, email, passwordHash(password),
+    cleaner ? "cleaner" : "owner", cleaner?.staffId ?? null, cleaner?.subcontractorId ?? null);
+  return id;
+}
+/** New password for an account; signs it out everywhere. */
+export function setPassword(userId: string, password: string) {
+  sqlite.prepare("UPDATE auth_users SET password_hash=? WHERE id=?").run(passwordHash(password), userId);
+  endSessions(userId);
+}
+export const endSessions = (userId: string) => sqlite.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(userId);
 
 export function registerAuth(app: Express) {
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
@@ -40,7 +55,7 @@ export function registerAuth(app: Express) {
         return res.status(403).json({ message: "A valid server setup token is required." });
       if (sqlite.prepare("SELECT 1 FROM auth_users LIMIT 1").get())
         return res.status(409).json({ message: "Setup is already complete. Sign in instead." });
-      sqlite.prepare("INSERT INTO auth_users VALUES (?,?,?,?,1)").run(randomUUID(), organizationId, email, passwordHash(password));
+      createAccount(email, password);
     } else if (req.params.action !== "login") return res.sendStatus(404);
     const user = sqlite.prepare("SELECT * FROM auth_users WHERE email=? AND active=1 AND organization_id=?").get(email, organizationId) as any;
     const stored = user?.password_hash || passwordHash("invalid-password");
@@ -51,7 +66,7 @@ export function registerAuth(app: Express) {
     sqlite.prepare("DELETE FROM auth_sessions WHERE expires_at<?").run(Date.now());
     sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, Date.now() + 12 * 3600000);
     sqlite.prepare("DELETE FROM auth_rate_limits WHERE key IN (?,?)").run(key, accountKey);
-    res.json({ token, email, organizationId });
+    res.json({ token, email, organizationId, role: user.role });
   });
   // Dedicated organization database: every private route belongs to its immutable
   // organization. Membership is checked at the perimeter for ALL legacy and new APIs.
@@ -61,10 +76,14 @@ export function registerAuth(app: Express) {
 export function protect(app: Express) {
   app.use("/api", (req, res, next) => {
     const token = req.headers.authorization?.replace(/^Bearer /, "") || "";
-    const user = sqlite.prepare(`SELECT u.id,u.email,u.organization_id FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
+    const user = sqlite.prepare(`SELECT u.id,u.email,u.organization_id,u.role,u.staff_id,u.subcontractor_id FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
       WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND u.organization_id=?`).get(hash(token), Date.now(), organizationId) as any;
     if (!user) return res.status(401).json({ message: "Sign in to your business workspace." });
     res.locals.user = user;
+    // Cleaner accounts only ever reach their own jobs (server/cleaner.ts) and sign-out.
+    // Everything else — customers, prices, invoices, expenses, settings — is owner-only.
+    if (user.role !== "owner" && !(req.path.startsWith("/cleaner/") || req.path === "/logout"))
+      return res.status(403).json({ message: "This part of the app is for the office. Open My jobs instead." });
     next();
   });
   app.post("/api/logout", (req, res) => {
@@ -73,7 +92,7 @@ export function protect(app: Express) {
   });
   app.post("/api/team", (req, res) => {
     const { email, password } = credentials.parse(req.body);
-    sqlite.prepare("INSERT INTO auth_users VALUES (?,?,?,?,1)").run(randomUUID(), organizationId, email, passwordHash(password));
+    createAccount(email, password);
     res.status(201).json({ email });
   });
 }

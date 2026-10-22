@@ -6,25 +6,29 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
-  const [signedIn, setSignedIn] = useState(false);
+/** Who's signed in. Cleaners get My jobs; owners get the whole workspace. The server enforces this too. */
+export type Session = { email: string; role: "owner" | "cleaner" };
+
+export function AuthGate({ children }: { children: (session: Session) => React.ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [setupToken, setSetupToken] = useState("");
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
   useEffect(() => {
-    const expire = () => { setSignedIn(false); queryClient.clear(); setError("Your session expired. Please sign in again."); };
+    const expire = () => { setSession(null); queryClient.clear(); setError("Your session expired. Please sign in again."); };
     window.addEventListener("workspace-session-expired", expire);
     return () => window.removeEventListener("workspace-session-expired", expire);
   }, []);
   const { data: status, error: statusError } = useQuery<any>({ queryKey: ["/api/auth/status"] });
-  if (signedIn) return <>{children}</>;
+  if (session) return <>{children(session)}</>;
   return <div className="min-h-screen flex items-center justify-center p-5 bg-muted/30">
     <Card className="w-full max-w-md">
-      <CardHeader><CardTitle>Mad River Cleaning Co.</CardTitle><p className="text-sm text-muted-foreground">{status?.setupRequired ? "Set up your protected business workspace." : "Sign in to your business workspace."}</p></CardHeader>
+      <CardHeader><CardTitle>Mad River Cleaning Co.</CardTitle><p className="text-sm text-muted-foreground">{status?.setupRequired ? "Set up your protected business workspace." : "Sign in to your business workspace or your cleaning jobs."}</p></CardHeader>
       <CardContent><form className="space-y-4" onSubmit={async e => {
         e.preventDefault(); setBusy(true); setError("");
         try {
           const result = await (await apiRequest("POST", `/api/auth/${status?.setupRequired ? "setup" : "login"}`, { email, password, setupToken })).json();
-          setSessionToken(result.token); queryClient.clear(); setPassword(""); setSetupToken(""); setSignedIn(true);
+          setSessionToken(result.token); queryClient.clear(); setPassword(""); setSetupToken("");
+          setSession({ email: result.email, role: result.role === "cleaner" ? "cleaner" : "owner" });
         } catch (e: any) { setError(e.message); } finally { setBusy(false); }
       }}>
         <div className="space-y-2"><Label htmlFor="login-email">Email</Label><Input id="login-email" type="email" autoComplete="username" value={email} onChange={e => setEmail(e.target.value)} required /></div>

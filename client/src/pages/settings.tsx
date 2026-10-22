@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Building2, FileText, ListChecks, Users, Bell } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, FileText, ListChecks, Users, Bell, KeyRound } from "lucide-react";
 import type { AppSettings, JobTemplate, Staff } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/tabs";
 import { JobTemplateDialog } from "@/components/settings/job-template-dialog";
 import { StaffDialog } from "@/components/settings/staff-dialog";
+import { CleanerLogins } from "@/components/settings/cleaner-logins";
 import { formatMoney } from "@/lib/format";
 
 export default function SettingsPage() {
@@ -109,6 +110,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="staff" className="gap-1.5" data-testid="tab-staff-roles">
             <Users className="h-3.5 w-3.5" /> Staff &amp; Roles
+          </TabsTrigger>
+          <TabsTrigger value="cleaner-logins" className="gap-1.5" data-testid="tab-cleaner-logins">
+            <KeyRound className="h-3.5 w-3.5" /> Cleaner Logins
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-1.5" data-testid="tab-notifications">
             <Bell className="h-3.5 w-3.5" /> Notifications
@@ -296,6 +300,8 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         </TabsContent>
+
+        <TabsContent value="cleaner-logins" className="mt-4"><CleanerLogins /></TabsContent>
 
         {/* Notifications */}
         <TabsContent value="notifications" className="mt-4">
