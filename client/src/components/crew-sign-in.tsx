@@ -20,7 +20,7 @@ export function CrewSignIn({ status, error, busy, onSignIn }: {
   const phone = status?.businessPhone || "";
 
   return (
-    <div className="flex min-h-[100dvh] flex-col bg-gradient-to-b from-primary/10 via-background to-background px-5 py-8">
+    <div className="flex h-[100dvh] flex-col overflow-y-auto bg-gradient-to-b from-primary/10 via-background to-background px-5 py-8">
       <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center">
         <MadRiverMark className="mx-auto h-20 w-20 rounded-full object-cover shadow-md ring-4 ring-background" />
         <h1 className="mt-5 text-center text-2xl font-semibold">Cleaner sign in</h1>

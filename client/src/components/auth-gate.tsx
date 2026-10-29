@@ -70,8 +70,8 @@ export function AuthGate({ children }: { children: (session: Session) => React.R
     <CrewSignIn status={status} busy={busy} error={error || (statusError ? (statusError as Error).message : "")}
       onSignIn={(email, password, remember) => signIn("login", { email, password, remember })} />
   );
-  return <div className="min-h-screen flex items-center justify-center p-5 bg-muted/30">
-    <Card className="w-full max-w-md">
+  return <div className="flex h-[100dvh] overflow-y-auto p-5 bg-muted/30">
+    <Card className="m-auto w-full max-w-md">
       <CardHeader><CardTitle>Mad River Cleaning Co.</CardTitle><p className="text-sm text-muted-foreground">{status?.setupRequired ? "Set up your protected business workspace." : "Sign in to your business workspace."}</p></CardHeader>
       <CardContent><form className="space-y-4" onSubmit={e => {
         e.preventDefault();

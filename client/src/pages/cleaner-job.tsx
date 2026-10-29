@@ -63,7 +63,7 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
   const { lastCheckOut, nextCheckIn } = job.stays;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-4 p-4 pb-24">
+    <div className="mx-auto max-w-2xl space-y-4 p-4 pb-[calc(6rem+env(safe-area-inset-bottom))]">
       {back}
       <div className="space-y-1">
         <div className="flex flex-wrap items-center gap-2"><h1 className="text-xl font-semibold">{p.name}</h1><StatusBadge status={job.status} /></div>
@@ -130,7 +130,7 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
 
       {!job.canEdit && <p className="text-center text-sm text-muted-foreground">This job has been invoiced, so it can't be changed. Contact the office if something's wrong.</p>}
       {canComplete && (
-        <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 p-3 backdrop-blur">
+        <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
           <div className="mx-auto max-w-2xl">
             <Button className="w-full" size="lg" onClick={() => setConfirming(true)} disabled={complete.isPending} data-testid="button-cleaner-complete">
               Mark job complete

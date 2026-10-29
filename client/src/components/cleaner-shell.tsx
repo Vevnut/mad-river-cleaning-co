@@ -13,7 +13,8 @@ export function CleanerShell({ email }: { email: string }) {
   const { data: me } = useQuery<CleanerMe>({ queryKey: ["/api/cleaner/me"] });
   const phone = me?.office.phone;
   return (
-    <div className="min-h-[100dvh] bg-muted/30">
+    // The office layout locks page scrolling (html/body overflow:hidden), so the cleaner app scrolls in its own box.
+    <div className="h-[100dvh] overflow-y-auto overscroll-contain bg-muted/30" data-testid="cleaner-scroll">
       <header className="sticky top-0 z-10 flex items-center gap-3 border-b bg-background/95 px-4 py-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur">
         <MadRiverMark className="h-9 w-9 shrink-0 rounded-full object-cover" />
         <div className="min-w-0 flex-1">
