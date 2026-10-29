@@ -14,14 +14,14 @@ if (typeof window !== "undefined") {
 const DISMISSED = "mrcc.install-hint-dismissed";
 const installed = () => window.matchMedia?.("(display-mode: standalone)").matches || (navigator as any).standalone === true;
 const isIos = () => /iphone|ipad|ipod/i.test(navigator.userAgent);
-const wasDismissed = () => { try { return localStorage.getItem(DISMISSED) === "1"; } catch { return false; } };
+const wasDismissed = () => { try { return document.cookie.split("; ").includes(`${DISMISSED}=1`); } catch { return false; } };
 
 /** "Add Mad River to your home screen" — phones only, until installed or dismissed. */
 export function InstallHint() {
   const [, rerender] = useState(0);
   const [hidden, setHidden] = useState(() => installed() || wasDismissed());
   useEffect(() => { const f = () => rerender(n => n + 1); listeners.add(f); return () => { listeners.delete(f); }; }, []);
-  const dismiss = () => { setHidden(true); try { localStorage.setItem(DISMISSED, "1"); } catch { /* fine: shows again next time */ } };
+  const dismiss = () => { setHidden(true); try { document.cookie = `${DISMISSED}=1; max-age=31536000; path=/; SameSite=Lax`; } catch { /* fine: shows again next time */ } };
 
   if (hidden || installed() || (!deferred && !isIos())) return null;
   return (

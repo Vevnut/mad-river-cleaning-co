@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
-import { apiRequest, setSessionToken, queryClient, savedSession, saveSession, forgetSession } from "@/lib/queryClient";
+import { apiRequest, setSessionToken, queryClient, resumeSavedSession } from "@/lib/queryClient";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -19,7 +19,7 @@ export function AuthGate({ children }: { children: (session: Session) => React.R
   const crew = location.startsWith("/crew");
   const [session, setSession] = useState<Session | null>(null);
   // A cleaner who chose "Keep me signed in" skips the sign-in page while their saved session is valid.
-  const [resuming, setResuming] = useState(() => !!savedSession());
+  const [resuming, setResuming] = useState(true);
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [setupToken, setSetupToken] = useState("");
   const [error, setError] = useState(""), [busy, setBusy] = useState(false);
   // Cleaners whose session ends go back to the cleaner sign-in, not the office one.
@@ -34,16 +34,18 @@ export function AuthGate({ children }: { children: (session: Session) => React.R
     return () => window.removeEventListener("workspace-session-expired", expire);
   }, [setLocation]);
   useEffect(() => {
-    const token = savedSession();
-    if (!token) return;
-    setSessionToken(token);
-    apiRequest("GET", "/api/session").then(r => r.json()).then(r => setSession(asSession(r)))
-      .catch(() => {
+    let cancelled = false;
+    resumeSavedSession().then(async token => {
+      if (!token || cancelled) return;
+      setSessionToken(token);
+      try { const r = await (await apiRequest("GET", "/api/session")).json(); if (!cancelled) setSession(asSession(r)); }
+      catch {
         // Only cleaners save sessions, so a saved one that no longer works (password reset, login off) means a cleaner.
-        setSessionToken(""); forgetSession(); setLocation("/crew");
+        setSessionToken(""); setLocation("/crew");
         setError("You've been signed out. Sign in again, or ask the office if your login stopped working.");
-      })
-      .finally(() => setResuming(false));
+      }
+    }).finally(() => { if (!cancelled) setResuming(false); });
+    return () => { cancelled = true; };
   }, [setLocation]);
   const { data: status, error: statusError } = useQuery<SignInStatus & { setupRequired: boolean; setupAvailable: boolean }>({ queryKey: ["/api/auth/status"] });
 
@@ -52,7 +54,6 @@ export function AuthGate({ children }: { children: (session: Session) => React.R
     try {
       const result = await (await apiRequest("POST", `/api/auth/${action}`, body)).json();
       setSessionToken(result.token); queryClient.clear(); setPassword(""); setSetupToken("");
-      if (result.remembered) saveSession(result.token, result.expiresAt); else forgetSession();
       if (crew) setLocation("/");
       setSession(asSession(result));
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }

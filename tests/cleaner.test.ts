@@ -38,6 +38,9 @@ const upload = (token: string, path: string) => fetch(base + path, { method: "PO
 const auth = async (action: string, body: any) =>
   (await fetch(`${base}/api/auth/${action}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })).json();
 const login = (email: string, password: string) => auth("login", { email, password });
+const loginRaw = (body: any) => fetch(`${base}/api/auth/login`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+const crewCookieOf = (res: Response) => (res.headers.get("set-cookie") || "").split(";")[0];
+const resume = (cookie: string) => fetch(`${base}/api/auth/resume`, { headers: cookie ? { Cookie: cookie } : {} });
 
 const day = (n: number) => new Date(Date.now() + n * 86400000).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
 const now = new Date().toISOString();
@@ -153,9 +156,20 @@ try {
   const kept = await auth("login", { email: "ben@example.test", password: benPw, remember: true });
   check("a cleaner can stay signed in for 30 days", kept.remembered === true && kept.expiresAt - Date.now() > 29 * 864e5);
   check("a saved cleaner session can be resumed", (await call(kept.token, "GET", "/api/session")).body.role === "cleaner");
+  const keptRes = await loginRaw({ email: "ben@example.test", password: benPw, remember: true });
+  const setCookie = keptRes.headers.get("set-cookie") || "";
+  check("the saved sign-in is an HttpOnly, SameSite=Strict cookie", /mrcc_crew=[a-f0-9]{64}/.test(setCookie) && /HttpOnly/i.test(setCookie) && /SameSite=Strict/i.test(setCookie) && /Max-Age=2592000/i.test(setCookie));
+  const benCookie = crewCookieOf(keptRes);
+  const resumed = await resume(benCookie);
+  check("reopening the app resumes from the cookie", resumed.status === 200 && (await resumed.json()).token === benCookie.split("=")[1]);
+  check("no cookie, nothing to resume", (await resume("")).status === 204 && (await resume("mrcc_crew=nope")).status === 204);
+  const briefRes = await loginRaw({ email: "ben@example.test", password: benPw });
+  check("signing in without the box clears the saved cookie", /mrcc_crew=;/.test(briefRes.headers.get("set-cookie") || ""));
   const brief = await auth("login", { email: "ben@example.test", password: benPw });
   check("without the box it lasts 12 hours", brief.remembered === false && brief.expiresAt - Date.now() < 13 * 3600000);
   const ownerKept = await auth("login", { email: "owner@example.test", password: "Owner-test-only-123", remember: true });
+  const ownerRes = await loginRaw({ email: "owner@example.test", password: "Owner-test-only-123", remember: true });
+  check("owners never get a saved cookie", !/mrcc_crew=[a-f0-9]/.test(ownerRes.headers.get("set-cookie") || ""));
   check("owners can't stay signed in", ownerKept.remembered === false && ownerKept.expiresAt - Date.now() < 13 * 3600000);
   check("a cleaner sees how to reach the office", "office" in (await call(benT, "GET", "/api/cleaner/me")).body);
 
@@ -183,6 +197,7 @@ try {
   db.prepare("UPDATE subcontractors SET active=1 WHERE id=?").run(ben);
   check("turning a subcontractor off in the app ends their sessions for good", (await call(benT2, "GET", "/api/cleaner/jobs")).status === 401);
   check("including a remembered 30-day sign-in", (await call(kept.token, "GET", "/api/session")).status === 401);
+  check("and its cookie no longer resumes", (await resume(benCookie)).status === 204);
 
   const cara = insert("INSERT INTO staff (name, role, email, phone, color_tag, active) VALUES (?,?,?,?,?,1)", "Cara Cleaner", "cleaner", "cara@example.test", "555-0103", "#654321");
   const caraPw = "Cara-test-only-123456";
@@ -190,6 +205,7 @@ try {
   check("owner creates another staff login", caraAcct.status === 201);
   const caraKept = await auth("login", { email: "cara@example.test", password: caraPw, remember: true });
   const bye = await fetch(`${base}/api/logout`, { method: "POST", headers: { Authorization: `Bearer ${caraKept.token}` } });
+  check("signing out clears the saved cookie", /mrcc_crew=;/.test(bye.headers.get("set-cookie") || ""));
   check("signing out ends a remembered sign-in", bye.status === 204 && (await call(caraKept.token, "GET", "/api/session")).status === 401);
   const caraKept2 = await auth("login", { email: "cara@example.test", password: caraPw, remember: true });
   const caraPw2 = "Cara-reset-only-123456";

@@ -6,30 +6,26 @@ export function setSessionToken(token: string) { sessionToken = token; }
 export function authHeaders() { return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}; }
 
 // "Keep me signed in on this phone" (cleaner logins only). Owner sessions are never saved.
-// The server decides how long it lasts and can end it any time (password reset, login off).
-const SAVED = "mrcc.cleaner-session";
-export function saveSession(token: string, expiresAt: number) {
-  try { localStorage.setItem(SAVED, JSON.stringify({ token, expiresAt })); } catch { /* private mode: just don't remember */ }
-}
-export function savedSession(): string | null {
+// The server keeps it in an HttpOnly cookie (scripts can't read it) and hands back the token
+// only on /api/auth/resume. It can end it any time (password reset, login off).
+export async function resumeSavedSession(): Promise<string | null> {
   try {
-    const s = JSON.parse(localStorage.getItem(SAVED) || "null");
-    if (s && typeof s.token === "string" && s.expiresAt > Date.now()) return s.token;
-    localStorage.removeItem(SAVED);
-  } catch { /* unreadable: treat as signed out */ }
-  return null;
+    const res = await fetch(`${API_BASE}/api/auth/resume`, { credentials: "same-origin", signal: AbortSignal.timeout(8000) });
+    if (res.status !== 200) return null;
+    const r = await res.json();
+    return typeof r.token === "string" ? r.token : null;
+  } catch { return null; }
 }
-export function forgetSession() { try { localStorage.removeItem(SAVED); } catch { /* nothing saved */ } }
 /** Ends the session everywhere it's kept. `then` is the sign-in page to land on, e.g. "#/crew" for cleaners. */
 export async function signOut(then = "#/") {
   // Confirm the server ended the session; a saved 30-day token must not quietly stay valid.
   let confirmed = false;
   try {
-    const res = await fetch(`${API_BASE}/api/logout`, { method: "POST", headers: authHeaders() as HeadersInit, signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${API_BASE}/api/logout`, { method: "POST", credentials: "same-origin", headers: authHeaders() as HeadersInit, signal: AbortSignal.timeout(8000) });
     confirmed = res.ok || res.status === 401; // 401: the session was already over
   } catch { /* offline or timed out */ }
   if (!confirmed && !window.confirm("Couldn't reach the office server to finish signing out, so this sign-in may still work for a while. Sign out on this phone anyway? (Press Cancel to try again when you have signal.)")) return false;
-  sessionToken = ""; forgetSession(); queryClient.clear();
+  sessionToken = ""; queryClient.clear();
   window.location.hash = then; window.location.reload();
   return confirmed;
 }
@@ -44,7 +40,7 @@ export function apiUrl(path: string): string {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     if (res.status === 401 && sessionToken) {
-      sessionToken = ""; forgetSession(); window.dispatchEvent(new Event("workspace-session-expired"));
+      sessionToken = ""; window.dispatchEvent(new Event("workspace-session-expired"));
     }
     const text = (await res.text()) || res.statusText;
     // API errors are JSON `{ message: string }` — surface just the clean

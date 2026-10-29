@@ -18,6 +18,17 @@ const limitAttempt = sqlite.transaction((key: string, max: number) => {
 // limit so rotating or spoofed IPs can't guess one password without bound.
 const IP_ATTEMPTS = 20, ACCOUNT_ATTEMPTS = 50;
 const SESSION_MS = 12 * 3600000, REMEMBERED_SESSION_MS = 30 * 24 * 3600000;
+// "Keep me signed in" lives in an HttpOnly cookie, so page scripts can never read the saved token.
+// It is only ever used by GET /api/auth/resume (same-site only); every other request needs the Bearer header.
+const CREW_COOKIE = "mrcc_crew";
+const crewCookie = (maxAge: number) => ({ httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict" as const, path: "/", maxAge });
+const readCookie = (header: string | undefined, name: string) => {
+  for (const part of (header || "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return "";
+};
 
 export const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
 /** Owner accounts have full access; cleaner accounts are linked to one staff member or subcontractor. */
@@ -46,6 +57,14 @@ export function registerAuth(app: Express) {
       setupAvailable: Boolean(process.env.AUTH_SETUP_TOKEN_HASH || process.env.AUTH_SETUP_TOKEN),
       businessName: s?.business_name || "Mad River Cleaning Co.", businessPhone: s?.business_phone || "",
     });
+  });
+  // Picks up a cleaner's "Keep me signed in" session from the HttpOnly cookie after the app reopens.
+  app.get("/api/auth/resume", (req, res) => {
+    const token = readCookie(req.headers.cookie, CREW_COOKIE);
+    const live = /^[a-f0-9]{64}$/.test(token) && sqlite.prepare(`SELECT 1 FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
+      WHERE s.token_hash=? AND s.expires_at>? AND u.role='cleaner' AND u.active=1`).get(hash(token), Date.now());
+    if (!live) { res.clearCookie(CREW_COOKIE, { ...crewCookie(0), maxAge: undefined }); return res.status(204).send(); }
+    res.json({ token });
   });
   app.post("/api/auth/:action", (req, res) => {
     const key = hash(req.ip || "unknown");
@@ -79,6 +98,8 @@ export function registerAuth(app: Express) {
     sqlite.prepare("DELETE FROM auth_sessions WHERE expires_at<?").run(Date.now());
     sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, expiresAt);
     sqlite.prepare("DELETE FROM auth_rate_limits WHERE key IN (?,?)").run(key, accountKey);
+    if (remembered) res.cookie(CREW_COOKIE, token, crewCookie(REMEMBERED_SESSION_MS));
+    else res.clearCookie(CREW_COOKIE, { ...crewCookie(0), maxAge: undefined });
     res.json({ token, email, organizationId, role: user.role, remembered, expiresAt });
   });
   // Dedicated organization database: every private route belongs to its immutable
@@ -105,6 +126,7 @@ export function protect(app: Express) {
   app.get("/api/session", (_req, res) => res.json({ email: res.locals.user.email, role: res.locals.user.role }));
   app.post("/api/logout", (req, res) => {
     sqlite.prepare("DELETE FROM auth_sessions WHERE token_hash=?").run(hash(req.headers.authorization!.replace(/^Bearer /, "")));
+    res.clearCookie(CREW_COOKIE, { ...crewCookie(0), maxAge: undefined });
     res.sendStatus(204);
   });
   app.post("/api/team", (req, res) => {
