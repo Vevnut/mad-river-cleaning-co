@@ -84,7 +84,7 @@ try {
   const annT = annLogin.token;
   check("a cleaner signs in and is told they're a cleaner", !!annT && annLogin.role === "cleaner");
   for (const path of ["/api/customers", "/api/jobs", "/api/invoices", "/api/expenses", "/api/subcontractors", "/api/staff",
-    "/api/settings", "/api/team/cleaners", `/api/jobs/${annJob}/photos`, "/api/stays", "/api/calendar/feed", "/api/properties"])
+    "/api/settings", "/api/team/cleaners", `/api/jobs/${annJob}/photos`, "/api/stays", "/api/calendar/feed", "/api/properties", "/api/job-subcontractors"])
     check(`a cleaner can't open ${path}`, (await call(annT, "GET", path)).status === 403);
   check("a cleaner can't create accounts", (await call(annT, "POST", "/api/team", { email: "evil@example.test", password: "Evil-test-only-123" })).status === 403);
   check("a cleaner can't create cleaner logins", (await call(annT, "POST", "/api/team/cleaners", { email: "e@example.test", password: annPw, staffId: ann })).status === 403);

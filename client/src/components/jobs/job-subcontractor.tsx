@@ -35,6 +35,7 @@ export function JobSubcontractor({ jobId, jobPrice }: { jobId: number; jobPrice:
     try {
       await apiRequest("PUT", `/api/jobs/${jobId}/subcontractor`, subId === "none" ? { subcontractorId: null } : { subcontractorId: Number(subId), pay: Number(pay) || 0 });
       queryClient.invalidateQueries({ queryKey: key });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-subcontractors"] });
       refreshSubcontractors();
       toast({ title: subId === "none" ? "Subcontractor removed from job" : "Subcontractor saved" });
     } catch (e) { toast({ title: "Couldn't save", description: (e as Error).message, variant: "destructive" }); }

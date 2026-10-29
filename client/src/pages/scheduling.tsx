@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { useJobCrew } from "@/lib/job-crew";
+import { useSubcontractors } from "@/components/subcontractors/sub-dialogs";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, Plus, CalendarDays } from "lucide-react";
 import type { Job, Staff, Property } from "@shared/schema";
@@ -57,15 +59,17 @@ export default function SchedulingPage() {
   const { data: allJobs = [], isLoading } = useQuery<Job[]>({ queryKey: ["/api/jobs"] });
   const { data: staffList = [] } = useQuery<Staff[]>({ queryKey: ["/api/staff"] });
   const { data: properties = [] } = useQuery<Property[]>({ queryKey: ["/api/properties"] });
+  const crew = useJobCrew();
+  const { data: subs = [] } = useSubcontractors();
 
   const filteredJobs = useMemo(() => {
     return allJobs.filter((j) => {
-      if (staffFilter !== "all" && String(j.assignedStaffId) !== staffFilter) return false;
+      if (!crew.matches(j, staffFilter)) return false;
       if (jobTypeFilter !== "all" && j.jobType !== jobTypeFilter) return false;
       if (propertyFilter !== "all" && String(j.propertyId) !== propertyFilter) return false;
       return true;
     });
-  }, [allJobs, staffFilter, jobTypeFilter, propertyFilter]);
+  }, [allJobs, staffFilter, jobTypeFilter, propertyFilter, crew]);
 
   const jobsByDate = useMemo(() => {
     const map = new Map<string, Job[]>();
@@ -148,13 +152,16 @@ export default function SchedulingPage() {
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <Select value={staffFilter} onValueChange={setStaffFilter}>
-          <SelectTrigger className="w-[160px] h-9" data-testid="select-filter-staff">
-            <SelectValue placeholder="All Staff" />
+          <SelectTrigger className="w-[200px] h-9" data-testid="select-filter-staff">
+            <SelectValue placeholder="Everyone" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Staff</SelectItem>
+            <SelectItem value="all">Everyone</SelectItem>
             {staffList.map((s) => (
               <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
+            ))}
+            {subs.filter((s) => s.active || `sub:${s.id}` === staffFilter).map((s) => (
+              <SelectItem key={`sub-${s.id}`} value={`sub:${s.id}`}>{s.name} (sub)</SelectItem>
             ))}
           </SelectContent>
         </Select>
@@ -279,6 +286,7 @@ function DayView({
   onAddJob: (date: string) => void;
   onOpenJob: (id: number) => void;
 }) {
+  const { crewName } = useJobCrew();
   const iso = isoDate(date);
   const jobs = jobsByDate.get(iso) ?? [];
   const google = googleByDate.get(iso) ?? [];
@@ -325,7 +333,7 @@ function DayView({
             <div className="flex-1 min-w-0">
               <p className="truncate font-medium text-sm">{property?.name ?? `Property #${job.propertyId}`}</p>
               <p className="truncate text-xs text-muted-foreground capitalize">
-                {job.jobType.replace("_", " ")} &middot; {job.durationMinutes} min &middot; {staff ? staff.name : "Unassigned"}
+                {job.jobType.replace("_", " ")} &middot; {job.durationMinutes} min &middot; {crewName(job)}
               </p>
             </div>
             <StatusBadge status={job.status} />

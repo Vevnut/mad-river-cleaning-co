@@ -1,4 +1,5 @@
 import { cn } from "@/lib/utils";
+import { useJobCrew } from "@/lib/job-crew";
 import type { Job, Staff } from "@shared/schema";
 
 const CHIP_STYLES: Record<Job["status"], string> = {
@@ -20,6 +21,7 @@ export function JobChip({
   onClick?: () => void;
   compact?: boolean;
 }) {
+  const { crewName } = useJobCrew();
   return (
     <button
       onClick={onClick}
@@ -28,7 +30,7 @@ export function JobChip({
         CHIP_STYLES[job.status]
       )}
       data-testid={`chip-job-${job.id}`}
-      title={`${job.scheduledTime} \u2022 ${job.jobType.replace("_", " ")}`}
+      title={`${job.scheduledTime} \u2022 ${job.jobType.replace("_", " ")} \u2022 ${crewName(job)}`}
     >
       <div className="flex items-center gap-1">
         {staff && (

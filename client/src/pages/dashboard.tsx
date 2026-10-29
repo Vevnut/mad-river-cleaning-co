@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useJobCrew } from "@/lib/job-crew";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -80,6 +81,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
   const isLoading = loadingCustomers || loadingJobs || loadingInvoices;
 
   const staffById = (id: number | null) => staffList.find((s) => s.id === id);
+  const { crewName } = useJobCrew();
   const propertyById = (id: number) => properties.find((p) => p.id === id);
   const customerById = (id: number) => customers.find((c) => c.id === id);
 
@@ -202,7 +204,7 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
                           <div className="min-w-0">
                             <p className="font-medium truncate">{property?.name ?? `Property #${job.propertyId}`}</p>
                             <p className="text-xs text-muted-foreground">
-                              {job.scheduledTime} &middot; {assignedStaff ? assignedStaff.name : "Unassigned"}
+                              {job.scheduledTime} &middot; {crewName(job)}
                             </p>
                           </div>
                           <StatusBadge status={job.status} />

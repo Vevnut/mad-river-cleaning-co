@@ -121,6 +121,11 @@ export function registerSubcontractors(app: Express) {
     const r = sqlite.prepare("SELECT a.*, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id WHERE a.job_id=?").get(jobId) as any;
     return r ? { jobId: r.job_id, subcontractorId: r.subcontractor_id, pay: r.pay, subcontractorName: r.name } : null;
   };
+  // Every job's subcontractor at once, so lists and the schedule can show who's on each job.
+  app.get("/api/job-subcontractors", (_req, res) => {
+    res.json((sqlite.prepare("SELECT a.job_id, a.subcontractor_id, a.pay, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id ORDER BY a.job_id").all() as any[])
+      .map(r => ({ jobId: r.job_id, subcontractorId: r.subcontractor_id, pay: r.pay, subcontractorName: r.name })));
+  });
   app.get("/api/jobs/:id/subcontractor", (req, res) => {
     const id = Number(req.params.id);
     if (!exists("jobs", id)) fail(404, "Job not found");

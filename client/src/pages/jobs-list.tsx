@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useJobCrew } from "@/lib/job-crew";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { Plus, Search, ClipboardList } from "lucide-react";
@@ -46,6 +47,7 @@ export default function JobsListPage() {
 
   const propertyById = (id: number) => properties.find((p) => p.id === id);
   const staffById = (id: number | null) => staffList.find((s) => s.id === id);
+  const { crewName } = useJobCrew();
 
   const filteredJobs = useMemo(() => {
     return jobs
@@ -57,15 +59,14 @@ export default function JobsListPage() {
         if (dateTo && j.scheduledDate > dateTo) return false;
         if (search.trim()) {
           const property = propertyById(j.propertyId);
-          const staff = staffById(j.assignedStaffId);
-          const haystack = `${property?.name ?? ""} ${property?.city ?? ""} ${staff?.name ?? ""} ${j.jobType}`.toLowerCase();
+          const haystack = `${property?.name ?? ""} ${property?.city ?? ""} ${crewName(j)} ${j.jobType}`.toLowerCase();
           if (!haystack.includes(search.trim().toLowerCase())) return false;
         }
         return true;
       })
       .sort((a, b) => (a.scheduledDate + a.scheduledTime).localeCompare(b.scheduledDate + b.scheduledTime))
       .reverse();
-  }, [jobs, statusFilter, jobTypeFilter, propertyFilter, dateFrom, dateTo, search, properties, staffList]);
+  }, [jobs, statusFilter, jobTypeFilter, propertyFilter, dateFrom, dateTo, search, properties, staffList, crewName]);
 
   const handleDelete = async () => {
     if (!deleteTarget) return;
@@ -94,7 +95,7 @@ export default function JobsListPage() {
         <div className="relative max-w-sm">
           <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search by property, city, staff..."
+            placeholder="Search by property, city, staff, subcontractor..."
             className="pl-8"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -176,7 +177,7 @@ export default function JobsListPage() {
                 <TableHead>Property</TableHead>
                 <TableHead className="hidden sm:table-cell">Type</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="hidden md:table-cell">Staff</TableHead>
+                <TableHead className="hidden md:table-cell">Assigned to</TableHead>
                 <TableHead className="text-right">Price</TableHead>
               </TableRow>
             </TableHeader>
@@ -204,7 +205,7 @@ export default function JobsListPage() {
                         <TableCell>
                           <StatusBadge status={job.status} />
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">{staff ? staff.name : "Unassigned"}</TableCell>
+                        <TableCell className="hidden md:table-cell">{crewName(job)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatMoney(job.price)}</TableCell>
                       </TableRow>
                     </ContextMenuTrigger>

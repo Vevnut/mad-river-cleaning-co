@@ -60,6 +60,9 @@ try {
   const asg2 = await call("PUT", `/api/jobs/${later}/subcontractor`, { subcontractorId: a.body.id, pay: 110.555 });
   check("a custom job pay is respected, rounded to cents", asg2.body.pay === 110.56);
   check("the job shows its subcontractor", (await call("GET", `/api/jobs/${done}/subcontractor`)).body.subcontractorId === a.body.id);
+  const all = (await call("GET", "/api/job-subcontractors")).body;
+  check("the all-jobs list shows both assignments", Array.isArray(all) && all.filter((x: any) => x.subcontractorId === a.body.id).length === 2
+    && all.find((x: any) => x.jobId === later)?.pay === 110.56 && all.find((x: any) => x.jobId === later)?.subcontractorName === "Jess Pike");
   check("negative pay is refused", (await call("PUT", `/api/jobs/${done}/subcontractor`, { subcontractorId: a.body.id, pay: -1 })).status === 400);
   let s = (await call("GET", "/api/subcontractors")).body.find((x: any) => x.id === a.body.id);
   check("only completed work counts as owed", s.earned === 85 && s.owed === 85 && s.completedJobs === 1 && s.upcomingJobs === 1);

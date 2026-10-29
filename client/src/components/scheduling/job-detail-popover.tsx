@@ -1,4 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { useJobCrew } from "@/lib/job-crew";
 import { Link } from "wouter";
 import { Play, CheckCircle2, Ban, ExternalLink, Clock, User, Home } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -40,6 +41,7 @@ export function JobDetailPopover({
   });
   const { data: staffList = [] } = useQuery<Staff[]>({ queryKey: ["/api/staff"], enabled: open });
   const assignedStaff = staffList.find((s) => s.id === job?.assignedStaffId);
+  const { crewName } = useJobCrew();
 
   const statusMutation = useMutation({
     mutationFn: async (status: Job["status"]) => {
@@ -75,7 +77,7 @@ export function JobDetailPopover({
           </div>
           <div className="flex items-center gap-2 text-muted-foreground">
             <User className="h-3.5 w-3.5" />
-            {assignedStaff ? assignedStaff.name : "Unassigned"}
+            {job ? crewName(job) : "Unassigned"}
           </div>
           {property && (
             <div className="flex items-center gap-2 text-muted-foreground">

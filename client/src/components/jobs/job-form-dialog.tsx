@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Choice, Field, rateOptions } from "@/components/billing-fields";
+import { useSubcontractors } from "@/components/subcontractors/sub-dialogs";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -87,6 +88,16 @@ export function JobFormDialog({
     enabled: open,
   });
 
+  const { data: subs = [] } = useSubcontractors();
+  const [subId, setSubId] = useState("none");
+  const [subPay, setSubPay] = useState("");
+  const chooseSub = (v: string) => {
+    setSubId(v);
+    const sub = subs.find((x) => String(x.id) === v);
+    setSubPay(sub && sub.defaultPay != null && sub.payType === "per_job" ? String(sub.defaultPay) : "");
+  };
+  const subOptions = [{ value: "none", label: "Not hired out" }, ...subs.filter((x) => x.active).map((x) => ({ value: String(x.id), label: x.name }))];
+
   // NOTE: zod v4 + z.coerce fields produce a resolver whose inferred input
   // type (pre-coercion) differs from FormValues (post-coercion) enough that
   // TS can't unify them structurally. Runtime validation is fully correct;
@@ -99,6 +110,8 @@ export function JobFormDialog({
 
   useEffect(() => {
     if (open) {
+      setSubId("none");
+      setSubPay("");
       form.reset({
         ...DEFAULTS,
         scheduledDate: initialDate ?? DEFAULTS.scheduledDate,
@@ -174,11 +187,21 @@ export function JobFormDialog({
         completedAt: null,
       };
       const res = await apiRequest("POST", "/api/jobs", payload);
-      return res.json();
+      const job: Job = await res.json();
+      if (subId !== "none") {
+        try {
+          await apiRequest("PUT", `/api/jobs/${job.id}/subcontractor`, { subcontractorId: Number(subId), pay: Number(subPay) || 0 });
+        } catch (e) {
+          toast({ title: "Job saved, but the subcontractor wasn't added", description: `${(e as Error).message} You can add them on the job's page.`, variant: "destructive" });
+        }
+      }
+      return job;
     },
     onSuccess: (job: Job) => {
       queryClient.invalidateQueries({ queryKey: ["/api/jobs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/job-subcontractors"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/subcontractors"] });
       toast({ title: "Job scheduled" });
       onOpenChange(false);
       onCreated?.(job);
@@ -331,6 +354,15 @@ export function JobFormDialog({
                   </SelectContent>
                 </Select>
               </FormItem>
+
+              {subs.length > 0 && (
+                <Field label="Subcontractor"><Choice label="Subcontractor" value={subId} options={subOptions} onChange={chooseSub} /></Field>
+              )}
+              {subId !== "none" && (
+                <Field label="Their pay for this job">
+                  <Input type="number" inputMode="decimal" min={0} step="0.01" value={subPay} onChange={(e) => setSubPay(e.target.value)} placeholder="0.00" data-testid="input-new-job-sub-pay" />
+                </Field>
+              )}
 
               <Field label="Default service rate"><Choice label="Job default rate" value={selectedRate} options={rateOptions} onChange={v => form.setValue("rateType", v as any)} /></Field>
               <FormField
