@@ -135,7 +135,9 @@ export function registerCleaner(app: Express) {
   app.get("/api/cleaner/me", (_req, res) => {
     const m = me(res);
     const pay = m.subcontractorId ? subcontractorPay(m.subcontractorId) : null;
-    res.json({ name: m.name, email: m.email, kind: m.staffId ? "staff" : "subcontractor", pay });
+    const s = sqlite.prepare("SELECT business_name, business_phone, business_email FROM app_settings LIMIT 1").get() as any;
+    const office = { name: s?.business_name || "the office", phone: s?.business_phone || "", email: s?.business_email || "" };
+    res.json({ name: m.name, email: m.email, kind: m.staffId ? "staff" : "subcontractor", pay, office });
   });
 
   app.get("/api/cleaner/jobs", (_req, res) => {

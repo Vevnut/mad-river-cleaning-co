@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { ArrowLeft, BedDouble, CalendarClock, CheckCircle2, Clock, KeyRound, MapPin, Package, StickyNote } from "lucide-react";
+import { ArrowLeft, BedDouble, CalendarClock, CheckCircle2, Clock, KeyRound, MapPin, Navigation, Package, Phone, StickyNote } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,7 @@ import {
 import { StatusBadge } from "@/components/status-badge";
 import { JobPhotos } from "@/components/jobs/job-photos";
 import { formatMoney } from "@/lib/format";
-import { type CleanerJob, addressLine, bathsLine, bedsLine, formatDay, formatTime, jobTypeLabel, mapsUrl } from "@/lib/cleaner";
+import { type CleanerJob, type CleanerMe, LIVE, addressLine, bathsLine, bedsLine, dial, formatDay, formatTime, jobTypeLabel, mapsUrl } from "@/lib/cleaner";
 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
@@ -32,7 +32,9 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
   const { toast } = useToast();
   const [confirming, setConfirming] = useState(false);
   const key = ["/api/cleaner/jobs", id];
-  const { data: job, isLoading, error } = useQuery<CleanerJob>({ queryKey: key });
+  const { data: job, isLoading, error } = useQuery<CleanerJob>({ queryKey: key, ...LIVE });
+  const { data: me } = useQuery<CleanerMe>({ queryKey: ["/api/cleaner/me"] });
+  const officePhone = me?.office.phone;
 
   // Every change returns the updated job; the list and pay totals refresh behind it.
   const send = async (method: string, path: string, body?: unknown) => (await apiRequest(method, path, body)).json() as Promise<CleanerJob>;
@@ -75,7 +77,16 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
 
       <Section icon={<MapPin className="h-4 w-4 text-primary" />} title="Address">
         <p>{addressLine(p)}</p>
-        <a href={mapsUrl(p)} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2" data-testid="link-cleaner-directions">Get directions</a>
+        <div className={`grid gap-2 pt-1 ${officePhone ? "grid-cols-2" : "grid-cols-1"}`}>
+          <Button asChild variant="outline" className="h-11 gap-1.5" data-testid="link-cleaner-directions">
+            <a href={mapsUrl(p)} target="_blank" rel="noreferrer"><Navigation className="h-4 w-4" /> Directions</a>
+          </Button>
+          {officePhone && (
+            <Button asChild variant="outline" className="h-11 gap-1.5">
+              <a href={`tel:${dial(officePhone)}`}><Phone className="h-4 w-4" /> Call office</a>
+            </Button>
+          )}
+        </div>
       </Section>
 
       <Section icon={<KeyRound className="h-4 w-4 text-primary" />} title="Getting in">

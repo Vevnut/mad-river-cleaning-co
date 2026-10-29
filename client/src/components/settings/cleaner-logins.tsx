@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { KeyRound, Plus } from "lucide-react";
+import { Copy, KeyRound, Plus } from "lucide-react";
 import type { Staff } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -119,6 +119,7 @@ export function CleanerLogins() {
   const { data: logins = [], isLoading } = useQuery<CleanerLogin[]>({ queryKey: KEY });
   const [adding, setAdding] = useState(false);
   const [resetting, setResetting] = useState<CleanerLogin | null>(null);
+  const crewLink = `${window.location.origin}${window.location.pathname}#/crew`;
   const toggle = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => apiRequest("PATCH", `/api/team/cleaners/${id}`, { active }),
     onSuccess: (_r, v) => { refresh(); toast({ title: v.active ? "Login turned on" : "Login turned off", description: v.active ? undefined : "They've been signed out." }); },
@@ -138,6 +139,14 @@ export function CleanerLogins() {
         <Button size="sm" className="gap-1.5" onClick={() => setAdding(true)} data-testid="button-add-cleaner-login"><Plus className="h-3.5 w-3.5" /> Add login</Button>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 p-3 text-sm">
+          <span className="text-muted-foreground">Send cleaners this sign-in link:</span>
+          <code className="min-w-0 flex-1 truncate text-xs" data-testid="text-crew-link">{crewLink}</code>
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={async () => {
+            try { await navigator.clipboard.writeText(crewLink); toast({ title: "Link copied", description: "Text it to your cleaners. They can add it to their home screen." }); }
+            catch { toast({ title: "Couldn't copy", description: "Press and hold the link to copy it instead." }); }
+          }}><Copy className="h-3.5 w-3.5" /> Copy</Button>
+        </div>
         {isLoading ? <p className="text-sm text-muted-foreground">Loading…</p> : !logins.length ? (
           <p className="text-sm text-muted-foreground">No cleaner logins yet.</p>
         ) : (

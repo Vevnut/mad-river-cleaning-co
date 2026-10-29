@@ -2,7 +2,14 @@
 // invoices, customer contact details or internal notes are ever sent to cleaners.
 
 export type CleanerPay = { earned: number; completedJobs: number; upcomingJobs: number; paid: number; owed: number; paidThisYear: number };
-export type CleanerMe = { name: string; email: string; kind: "staff" | "subcontractor"; pay: CleanerPay | null };
+export type CleanerMe = {
+  name: string; email: string; kind: "staff" | "subcontractor"; pay: CleanerPay | null;
+  office: { name: string; phone: string; email: string };
+};
+
+/** Cleaners keep the app open all day: refresh their jobs when they come back to it, and every few minutes. */
+export const LIVE = { staleTime: 60_000, refetchOnWindowFocus: true, refetchInterval: 5 * 60_000 } as const;
+export const dial = (phone: string) => phone.replace(/[^\d+]/g, "");
 
 export type CleanerAddress = { name: string; addressLine1: string; addressLine2: string | null; city: string; state: string; zip: string };
 export type CleanerJobSummary = {

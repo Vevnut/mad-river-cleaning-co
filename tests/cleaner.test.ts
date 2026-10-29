@@ -147,6 +147,18 @@ try {
   check("completing a job adds it to what they're owed", (await call(benT, "GET", "/api/cleaner/me")).body.pay.owed === 85);
   check("a subcontractor can't see the staff cleaner's job", (await call(benT, "GET", `/api/cleaner/jobs/${annJob}`)).status === 404);
 
+  // ---- Staying signed in ----
+  const status = await (await fetch(`${base}/api/auth/status`)).json();
+  check("the sign-in page knows the business name", typeof status.businessName === "string" && "businessPhone" in status);
+  const kept = await auth("login", { email: "ben@example.test", password: benPw, remember: true });
+  check("a cleaner can stay signed in for 30 days", kept.remembered === true && kept.expiresAt - Date.now() > 29 * 864e5);
+  check("a saved cleaner session can be resumed", (await call(kept.token, "GET", "/api/session")).body.role === "cleaner");
+  const brief = await auth("login", { email: "ben@example.test", password: benPw });
+  check("without the box it lasts 12 hours", brief.remembered === false && brief.expiresAt - Date.now() < 13 * 3600000);
+  const ownerKept = await auth("login", { email: "owner@example.test", password: "Owner-test-only-123", remember: true });
+  check("owners can't stay signed in", ownerKept.remembered === false && ownerKept.expiresAt - Date.now() < 13 * 3600000);
+  check("a cleaner sees how to reach the office", "office" in (await call(benT, "GET", "/api/cleaner/me")).body);
+
   // ---- Owner stays in charge ----
   check("owners still have the full app", (await call(owner, "GET", "/api/customers")).status === 200);
   check("My jobs is only for cleaner logins", (await call(owner, "GET", "/api/cleaner/jobs")).status === 403);

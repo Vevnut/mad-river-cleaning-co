@@ -17,6 +17,7 @@ const limitAttempt = sqlite.transaction((key: string, max: number) => {
 // Per visitor IP (needs `trust proxy` in server/index.ts), plus a looser per-account
 // limit so rotating or spoofed IPs can't guess one password without bound.
 const IP_ATTEMPTS = 20, ACCOUNT_ATTEMPTS = 50;
+const SESSION_MS = 12 * 3600000, REMEMBERED_SESSION_MS = 30 * 24 * 3600000;
 
 export const credentials = z.object({ email: z.string().email().transform(s => s.toLowerCase()), password: z.string().min(12).max(128) });
 /** Owner accounts have full access; cleaner accounts are linked to one staff member or subcontractor. */
@@ -36,10 +37,16 @@ export const endSessions = (userId: string) => sqlite.prepare("DELETE FROM auth_
 
 export function registerAuth(app: Express) {
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
-  app.get("/api/auth/status", (_req, res) => res.json({
-    setupRequired: !(sqlite.prepare("SELECT 1 FROM auth_users LIMIT 1").get()),
-    setupAvailable: Boolean(process.env.AUTH_SETUP_TOKEN_HASH || process.env.AUTH_SETUP_TOKEN),
-  }));
+  app.get("/api/auth/status", (_req, res) => {
+    // The business name and phone are already printed on every invoice; the sign-in
+    // page shows them so a cleaner who forgot their password knows who to call.
+    const s = sqlite.prepare("SELECT business_name, business_phone FROM app_settings LIMIT 1").get() as any;
+    res.json({
+      setupRequired: !(sqlite.prepare("SELECT 1 FROM auth_users LIMIT 1").get()),
+      setupAvailable: Boolean(process.env.AUTH_SETUP_TOKEN_HASH || process.env.AUTH_SETUP_TOKEN),
+      businessName: s?.business_name || "Mad River Cleaning Co.", businessPhone: s?.business_phone || "",
+    });
+  });
   app.post("/api/auth/:action", (req, res) => {
     const key = hash(req.ip || "unknown");
     if (!limitAttempt(key, IP_ATTEMPTS)) return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
@@ -66,10 +73,13 @@ export function registerAuth(app: Express) {
     const matches = timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(passwordHash(password, salt).split(":")[1], "hex"));
     if (!user || !matches) return res.status(401).json({ message: "Email or password is incorrect." });
     const token = randomBytes(32).toString("hex");
+    // "Keep me signed in on this phone" is for cleaner logins only; owner sessions stay short.
+    const remembered = user.role === "cleaner" && req.body.remember === true;
+    const expiresAt = Date.now() + (remembered ? REMEMBERED_SESSION_MS : SESSION_MS);
     sqlite.prepare("DELETE FROM auth_sessions WHERE expires_at<?").run(Date.now());
-    sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, Date.now() + 12 * 3600000);
+    sqlite.prepare("INSERT INTO auth_sessions VALUES (?,?,?)").run(hash(token), user.id, expiresAt);
     sqlite.prepare("DELETE FROM auth_rate_limits WHERE key IN (?,?)").run(key, accountKey);
-    res.json({ token, email, organizationId, role: user.role });
+    res.json({ token, email, organizationId, role: user.role, remembered, expiresAt });
   });
   // Dedicated organization database: every private route belongs to its immutable
   // organization. Membership is checked at the perimeter for ALL legacy and new APIs.
@@ -87,10 +97,12 @@ export function protect(app: Express) {
     res.locals.user = user;
     // Cleaner accounts only ever reach their own jobs (server/cleaner.ts) and sign-out.
     // Everything else — customers, prices, invoices, expenses, settings — is owner-only.
-    if (user.role !== "owner" && !(req.path.startsWith("/cleaner/") || req.path === "/logout"))
+    if (user.role !== "owner" && !(req.path.startsWith("/cleaner/") || req.path === "/logout" || req.path === "/session"))
       return res.status(403).json({ message: "This part of the app is for the office. Open My jobs instead." });
     next();
   });
+  // Who a saved session belongs to, so a cleaner who kept themselves signed in skips the sign-in page.
+  app.get("/api/session", (_req, res) => res.json({ email: res.locals.user.email, role: res.locals.user.role }));
   app.post("/api/logout", (req, res) => {
     sqlite.prepare("DELETE FROM auth_sessions WHERE token_hash=?").run(hash(req.headers.authorization!.replace(/^Bearer /, "")));
     res.sendStatus(204);

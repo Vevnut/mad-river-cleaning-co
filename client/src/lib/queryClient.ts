@@ -5,6 +5,28 @@ let sessionToken = "";
 export function setSessionToken(token: string) { sessionToken = token; }
 export function authHeaders() { return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}; }
 
+// "Keep me signed in on this phone" (cleaner logins only). Owner sessions are never saved.
+// The server decides how long it lasts and can end it any time (password reset, login off).
+const SAVED = "mrcc.cleaner-session";
+export function saveSession(token: string, expiresAt: number) {
+  try { localStorage.setItem(SAVED, JSON.stringify({ token, expiresAt })); } catch { /* private mode: just don't remember */ }
+}
+export function savedSession(): string | null {
+  try {
+    const s = JSON.parse(localStorage.getItem(SAVED) || "null");
+    if (s && typeof s.token === "string" && s.expiresAt > Date.now()) return s.token;
+    localStorage.removeItem(SAVED);
+  } catch { /* unreadable: treat as signed out */ }
+  return null;
+}
+export function forgetSession() { try { localStorage.removeItem(SAVED); } catch { /* nothing saved */ } }
+/** Ends the session everywhere it's kept. `then` is the sign-in page to land on, e.g. "#/crew" for cleaners. */
+export async function signOut(then = "#/") {
+  await fetch(`${API_BASE}/api/logout`, { method: "POST", headers: authHeaders() as HeadersInit }).catch(() => {});
+  sessionToken = ""; forgetSession(); queryClient.clear();
+  window.location.hash = then; window.location.reload();
+}
+
 // Exported so call sites that build URLs outside of apiRequest/getQueryFn
 // (e.g. window.open for the printable invoice) still resolve through the
 // deployed proxy prefix instead of hitting the static host directly.
@@ -15,7 +37,7 @@ export function apiUrl(path: string): string {
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     if (res.status === 401 && sessionToken) {
-      sessionToken = ""; window.dispatchEvent(new Event("workspace-session-expired"));
+      sessionToken = ""; forgetSession(); window.dispatchEvent(new Event("workspace-session-expired"));
     }
     const text = (await res.text()) || res.statusText;
     // API errors are JSON `{ message: string }` — surface just the clean
