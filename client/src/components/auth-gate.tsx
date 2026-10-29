@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { Loader2 } from "lucide-react";
-import { apiRequest, setSessionToken, queryClient, resumeSavedSession } from "@/lib/queryClient";
+import { apiRequest, setSessionToken, queryClient, resumeSavedSession, setNoResume } from "@/lib/queryClient";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -53,7 +53,7 @@ export function AuthGate({ children }: { children: (session: Session) => React.R
     setBusy(true); setError("");
     try {
       const result = await (await apiRequest("POST", `/api/auth/${action}`, body)).json();
-      setSessionToken(result.token); queryClient.clear(); setPassword(""); setSetupToken("");
+      setSessionToken(result.token); queryClient.clear(); setPassword(""); setSetupToken(""); setNoResume(false);
       if (crew) setLocation("/");
       setSession(asSession(result));
     } catch (e: any) { setError(e.message); } finally { setBusy(false); }

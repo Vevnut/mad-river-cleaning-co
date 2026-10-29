@@ -8,7 +8,15 @@ export function authHeaders() { return sessionToken ? { Authorization: `Bearer $
 // "Keep me signed in on this phone" (cleaner logins only). Owner sessions are never saved.
 // The server keeps it in an HttpOnly cookie (scripts can't read it) and hands back the token
 // only on /api/auth/resume. It can end it any time (password reset, login off).
+// Set when a cleaner signs out without signal: the HttpOnly cookie can't be cleared from here,
+// so this (non-secret) flag stops the app signing them back in until they sign in on purpose.
+const NO_RESUME = "mrcc_no_resume";
+const noResume = () => { try { return document.cookie.split("; ").includes(`${NO_RESUME}=1`); } catch { return false; } };
+export function setNoResume(on: boolean) {
+  try { document.cookie = on ? `${NO_RESUME}=1; max-age=2592000; path=/; SameSite=Strict` : `${NO_RESUME}=; max-age=0; path=/; SameSite=Strict`; } catch { /* cookies off */ }
+}
 export async function resumeSavedSession(): Promise<string | null> {
+  if (noResume()) return null;
   try {
     const res = await fetch(`${API_BASE}/api/auth/resume`, { credentials: "same-origin", signal: AbortSignal.timeout(8000) });
     if (res.status !== 200) return null;
@@ -25,6 +33,7 @@ export async function signOut(then = "#/") {
     confirmed = res.ok || res.status === 401; // 401: the session was already over
   } catch { /* offline or timed out */ }
   if (!confirmed && !window.confirm("Couldn't reach the office server to finish signing out, so this sign-in may still work for a while. Sign out on this phone anyway? (Press Cancel to try again when you have signal.)")) return false;
+  if (!confirmed) setNoResume(true);
   sessionToken = ""; queryClient.clear();
   window.location.hash = then; window.location.reload();
   return confirmed;

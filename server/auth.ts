@@ -25,7 +25,7 @@ const crewCookie = (maxAge: number) => ({ httpOnly: true, secure: process.env.NO
 const readCookie = (header: string | undefined, name: string) => {
   for (const part of (header || "").split(";")) {
     const i = part.indexOf("=");
-    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim(); // tokens are plain hex
   }
   return "";
 };
@@ -62,7 +62,9 @@ export function registerAuth(app: Express) {
   app.get("/api/auth/resume", (req, res) => {
     const token = readCookie(req.headers.cookie, CREW_COOKIE);
     const live = /^[a-f0-9]{64}$/.test(token) && sqlite.prepare(`SELECT 1 FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
-      WHERE s.token_hash=? AND s.expires_at>? AND u.role='cleaner' AND u.active=1`).get(hash(token), Date.now());
+      WHERE s.token_hash=? AND s.expires_at>? AND u.role='cleaner' AND u.active=1 AND u.organization_id=?
+      AND (EXISTS (SELECT 1 FROM staff st WHERE st.id=u.staff_id AND st.active=1)
+        OR EXISTS (SELECT 1 FROM subcontractors sc WHERE sc.id=u.subcontractor_id AND sc.active=1))`).get(hash(token), Date.now(), organizationId);
     if (!live) { res.clearCookie(CREW_COOKIE, { ...crewCookie(0), maxAge: undefined }); return res.status(204).send(); }
     res.json({ token });
   });

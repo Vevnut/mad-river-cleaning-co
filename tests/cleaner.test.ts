@@ -162,7 +162,7 @@ try {
   const benCookie = crewCookieOf(keptRes);
   const resumed = await resume(benCookie);
   check("reopening the app resumes from the cookie", resumed.status === 200 && (await resumed.json()).token === benCookie.split("=")[1]);
-  check("no cookie, nothing to resume", (await resume("")).status === 204 && (await resume("mrcc_crew=nope")).status === 204);
+  check("no cookie, nothing to resume", (await resume("")).status === 204 && (await resume("mrcc_crew=nope")).status === 204 && (await resume("mrcc_crew=%")).status === 204);
   const briefRes = await loginRaw({ email: "ben@example.test", password: benPw });
   check("signing in without the box clears the saved cookie", /mrcc_crew=;/.test(briefRes.headers.get("set-cookie") || ""));
   const brief = await auth("login", { email: "ben@example.test", password: benPw });
