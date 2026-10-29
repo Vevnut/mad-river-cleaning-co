@@ -171,6 +171,17 @@ try {
   db.prepare("UPDATE subcontractors SET active=1 WHERE id=?").run(ben);
   check("turning a subcontractor off in the app ends their sessions for good", (await call(benT2, "GET", "/api/cleaner/jobs")).status === 401);
 
+  const cara = insert("INSERT INTO staff (name, role, email, phone, color_tag, active) VALUES (?,?,?,?,?,1)", "Cara Cleaner", "cleaner", "cara@example.test", "555-0103", "#654321");
+  const caraPw = "Cara-test-only-123456";
+  check("owner creates another staff login", (await call(owner, "POST", "/api/team/cleaners", { email: "cara@example.test", password: caraPw, staffId: cara })).status === 201);
+  const caraT = (await login("cara@example.test", caraPw)).token;
+  check("staff cleaner signs in", (await call(caraT, "GET", "/api/cleaner/jobs")).status === 200);
+  check("owner turns the staff member off", (await call(owner, "PATCH", `/api/staff/${cara}`, { active: false })).body.active === false);
+  check("an inactive staff member is blocked and can't sign in", (await call(caraT, "GET", "/api/cleaner/jobs")).status === 401 && !(await login("cara@example.test", caraPw)).token);
+  await call(owner, "PATCH", `/api/staff/${cara}`, { active: true });
+  check("turning staff back on doesn't revive the old session", (await call(caraT, "GET", "/api/cleaner/jobs")).status === 401);
+  check("but they can sign in fresh", !!(await login("cara@example.test", caraPw)).token);
+
   check("database links stay consistent", (db.pragma("foreign_key_check") as any[]).length === 0);
   console.log(`${count} cleaner checks passed.`);
 } finally {

@@ -250,7 +250,6 @@ export async function registerRoutes(
   app.get("/api/staff/:id", async (req, res) => {
     const member = await storage.getStaffMember(Number(req.params.id));
     if (!member) return res.status(404).json({ message: "Staff member not found" });
-    if (!member.active) endLinkedSessions({ staffId: member.id });
     res.json(member);
   });
 
@@ -270,6 +269,7 @@ export async function registerRoutes(
     }
     const member = await storage.updateStaff(Number(req.params.id), parsed.data as Partial<InsertStaff>);
     if (!member) return res.status(404).json({ message: "Staff member not found" });
+    if (!member.active) endLinkedSessions({ staffId: member.id });
     res.json(member);
   });
 
