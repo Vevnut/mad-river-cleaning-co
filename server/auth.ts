@@ -57,7 +57,10 @@ export function registerAuth(app: Express) {
         return res.status(409).json({ message: "Setup is already complete. Sign in instead." });
       createAccount(email, password);
     } else if (req.params.action !== "login") return res.sendStatus(404);
-    const user = sqlite.prepare("SELECT * FROM auth_users WHERE email=? AND active=1 AND organization_id=?").get(email, organizationId) as any;
+    // A cleaner whose staff or subcontractor record is turned off can't sign in.
+    const user = sqlite.prepare(`SELECT * FROM auth_users u WHERE u.email=? AND u.active=1 AND u.organization_id=?
+      AND (u.role='owner' OR EXISTS (SELECT 1 FROM staff st WHERE st.id=u.staff_id AND st.active=1)
+        OR EXISTS (SELECT 1 FROM subcontractors sc WHERE sc.id=u.subcontractor_id AND sc.active=1))`).get(email, organizationId) as any;
     const stored = user?.password_hash || passwordHash("invalid-password");
     const [salt, digest] = stored.split(":");
     const matches = timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(passwordHash(password, salt).split(":")[1], "hex"));
@@ -77,7 +80,9 @@ export function protect(app: Express) {
   app.use("/api", (req, res, next) => {
     const token = req.headers.authorization?.replace(/^Bearer /, "") || "";
     const user = sqlite.prepare(`SELECT u.id,u.email,u.organization_id,u.role,u.staff_id,u.subcontractor_id FROM auth_sessions s JOIN auth_users u ON u.id=s.user_id
-      WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND u.organization_id=?`).get(hash(token), Date.now(), organizationId) as any;
+      WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND u.organization_id=?
+      AND (u.role='owner' OR EXISTS (SELECT 1 FROM staff st WHERE st.id=u.staff_id AND st.active=1)
+        OR EXISTS (SELECT 1 FROM subcontractors sc WHERE sc.id=u.subcontractor_id AND sc.active=1))`).get(hash(token), Date.now(), organizationId) as any;
     if (!user) return res.status(401).json({ message: "Sign in to your business workspace." });
     res.locals.user = user;
     // Cleaner accounts only ever reach their own jobs (server/cleaner.ts) and sign-out.
@@ -95,4 +100,11 @@ export function protect(app: Express) {
     createAccount(email, password);
     res.status(201).json({ email });
   });
+}
+
+/** Sign out every cleaner login linked to a staff member or subcontractor (used when they're turned off). */
+export function endLinkedSessions(link: { staffId?: number; subcontractorId?: number }) {
+  sqlite.prepare(`DELETE FROM auth_sessions WHERE user_id IN (SELECT id FROM auth_users WHERE role='cleaner'
+    AND ((? IS NOT NULL AND staff_id=?) OR (? IS NOT NULL AND subcontractor_id=?)))`)
+    .run(link.staffId ?? null, link.staffId ?? null, link.subcontractorId ?? null, link.subcontractorId ?? null);
 }

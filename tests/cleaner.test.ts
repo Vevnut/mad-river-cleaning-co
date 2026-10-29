@@ -92,6 +92,9 @@ try {
   const mine = (await call(annT, "GET", "/api/cleaner/jobs")).body;
   const ids = mine.jobs.map((j: any) => j.id);
   check("My jobs lists their job", ids.includes(annJob));
+  check("a job outside the date window can't be opened directly", (await call(annT, "GET", `/api/cleaner/jobs/${annFar}`)).status === 404
+    && (await call(annT, "PATCH", `/api/cleaner/jobs/${annFar}`, { damageNotes: "x" })).status === 404
+    && (await call(annT, "GET", `/api/cleaner/jobs/${annFar}/photos`)).status === 404);
   check("My jobs leaves out other people's jobs", !ids.includes(otherJob) && !ids.includes(benJob));
   check("My jobs leaves out canceled jobs", !ids.includes(annCanceled));
   check("My jobs stops at about two months ahead", !ids.includes(annFar));
@@ -157,7 +160,16 @@ try {
   check("and stops them signing in", !(await login("ann@example.test", newPw)).token);
   db.prepare("UPDATE subcontractors SET active=0 WHERE id=?").run(ben);
   const benOff = await call(benT, "GET", "/api/cleaner/jobs");
-  check("making the subcontractor inactive blocks their login", benOff.status === 403 && benOff.body.message.includes("turned off"));
+  check("making the subcontractor inactive blocks their login", benOff.status === 401 || benOff.status === 403);
+  check("an inactive subcontractor can't sign in", !(await login("ben@example.test", benPw)).token);
+  db.prepare("UPDATE subcontractors SET active=1 WHERE id=?").run(ben);
+  const benT2 = (await login("ben@example.test", benPw)).token;
+  check("reactivated subcontractor can sign in again", (await call(benT2, "GET", "/api/cleaner/jobs")).status === 200);
+  const benRec = (await call(owner, "GET", "/api/subcontractors")).body.find((x: any) => x.id === ben);
+  const offRes = await call(owner, "PATCH", `/api/subcontractors/${ben}`, { ...benRec, active: false });
+  check("owner can turn the subcontractor off", offRes.status === 200 && offRes.body.active === false);
+  db.prepare("UPDATE subcontractors SET active=1 WHERE id=?").run(ben);
+  check("turning a subcontractor off in the app ends their sessions for good", (await call(benT2, "GET", "/api/cleaner/jobs")).status === 401);
 
   check("database links stay consistent", (db.pragma("foreign_key_check") as any[]).length === 0);
   console.log(`${count} cleaner checks passed.`);

@@ -56,8 +56,11 @@ function summary(r: any, m: Me) {
   };
 }
 
+// Detail, photos and changes use the same window as the list (14 days back, 60 ahead).
 function myJob(m: Me, id: number) {
-  const r = sqlite.prepare(`${JOBS} AND j.id=@id`).get({ ...who(m), id }) as any;
+  const day = today();
+  const r = sqlite.prepare(`${JOBS} AND j.id=@id AND j.scheduled_date>=@from AND j.scheduled_date<=@to`)
+    .get({ ...who(m), id, from: addDays(day, -PAST_DAYS), to: addDays(day, AHEAD_DAYS) }) as any;
   if (!r) fail(404, "Job not found");
   return r;
 }

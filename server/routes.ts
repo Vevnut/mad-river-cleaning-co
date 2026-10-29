@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import { endLinkedSessions } from "./auth";
 import { createServer } from 'node:http';
 import type { Server } from 'node:http';
 import { storage } from "./storage";
@@ -249,6 +250,7 @@ export async function registerRoutes(
   app.get("/api/staff/:id", async (req, res) => {
     const member = await storage.getStaffMember(Number(req.params.id));
     if (!member) return res.status(404).json({ message: "Staff member not found" });
+    if (!member.active) endLinkedSessions({ staffId: member.id });
     res.json(member);
   });
 

@@ -1,4 +1,5 @@
 import type { Express, Response } from "express";
+import { endLinkedSessions } from "./auth";
 import { z } from "zod";
 import { sqlite } from "./storage";
 import { SUB_PAYMENT_METHODS, EARNED_STATUSES } from "@shared/subcontractors";
@@ -101,6 +102,7 @@ export function registerSubcontractors(app: Express) {
     if (!exists("subcontractors", id)) fail(404, "Subcontractor not found");
     const c = columns(parse(subSchema, req.body));
     sqlite.prepare(`UPDATE subcontractors SET ${Object.keys(c).map(k => `${k}=?`).join(",")}, updated_at=? WHERE id=?`).run(...Object.values(c), now(), id);
+    if (!(sqlite.prepare("SELECT active FROM subcontractors WHERE id=?").get(id) as any).active) endLinkedSessions({ subcontractorId: id });
     res.json(withTotals(sqlite.prepare("SELECT * FROM subcontractors WHERE id=?").get(id)));
   });
 
