@@ -16,7 +16,7 @@ export function CrewSignIn({ status, error, busy, onSignIn }: {
   onSignIn: (email: string, password: string, remember: boolean) => void;
 }) {
   const [email, setEmail] = useState(""), [password, setPassword] = useState("");
-  const [show, setShow] = useState(false), [remember, setRemember] = useState(true);
+  const [show, setShow] = useState(false), [remember, setRemember] = useState(false);
   const phone = status?.businessPhone || "";
 
   return (

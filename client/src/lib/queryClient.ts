@@ -22,9 +22,16 @@ export function savedSession(): string | null {
 export function forgetSession() { try { localStorage.removeItem(SAVED); } catch { /* nothing saved */ } }
 /** Ends the session everywhere it's kept. `then` is the sign-in page to land on, e.g. "#/crew" for cleaners. */
 export async function signOut(then = "#/") {
-  await fetch(`${API_BASE}/api/logout`, { method: "POST", headers: authHeaders() as HeadersInit }).catch(() => {});
+  // Confirm the server ended the session; a saved 30-day token must not quietly stay valid.
+  let confirmed = false;
+  try {
+    const res = await fetch(`${API_BASE}/api/logout`, { method: "POST", headers: authHeaders() as HeadersInit, signal: AbortSignal.timeout(8000) });
+    confirmed = res.ok || res.status === 401; // 401: the session was already over
+  } catch { /* offline or timed out */ }
+  if (!confirmed && !window.confirm("Couldn't reach the office server to finish signing out, so this sign-in may still work for a while. Sign out on this phone anyway? (Press Cancel to try again when you have signal.)")) return false;
   sessionToken = ""; forgetSession(); queryClient.clear();
   window.location.hash = then; window.location.reload();
+  return confirmed;
 }
 
 // Exported so call sites that build URLs outside of apiRequest/getQueryFn

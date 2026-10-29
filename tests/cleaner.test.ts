@@ -182,10 +182,24 @@ try {
   check("owner can turn the subcontractor off", offRes.status === 200 && offRes.body.active === false);
   db.prepare("UPDATE subcontractors SET active=1 WHERE id=?").run(ben);
   check("turning a subcontractor off in the app ends their sessions for good", (await call(benT2, "GET", "/api/cleaner/jobs")).status === 401);
+  check("including a remembered 30-day sign-in", (await call(kept.token, "GET", "/api/session")).status === 401);
 
   const cara = insert("INSERT INTO staff (name, role, email, phone, color_tag, active) VALUES (?,?,?,?,?,1)", "Cara Cleaner", "cleaner", "cara@example.test", "555-0103", "#654321");
   const caraPw = "Cara-test-only-123456";
-  check("owner creates another staff login", (await call(owner, "POST", "/api/team/cleaners", { email: "cara@example.test", password: caraPw, staffId: cara })).status === 201);
+  const caraAcct = await call(owner, "POST", "/api/team/cleaners", { email: "cara@example.test", password: caraPw, staffId: cara });
+  check("owner creates another staff login", caraAcct.status === 201);
+  const caraKept = await auth("login", { email: "cara@example.test", password: caraPw, remember: true });
+  const bye = await fetch(`${base}/api/logout`, { method: "POST", headers: { Authorization: `Bearer ${caraKept.token}` } });
+  check("signing out ends a remembered sign-in", bye.status === 204 && (await call(caraKept.token, "GET", "/api/session")).status === 401);
+  const caraKept2 = await auth("login", { email: "cara@example.test", password: caraPw, remember: true });
+  const caraPw2 = "Cara-reset-only-123456";
+  await call(owner, "PATCH", `/api/team/cleaners/${caraAcct.body.id}`, { password: caraPw2 });
+  check("a password reset ends a remembered sign-in", (await call(caraKept2.token, "GET", "/api/session")).status === 401);
+  await call(owner, "PATCH", `/api/team/cleaners/${caraAcct.body.id}`, { password: caraPw });
+  const caraKept3 = await auth("login", { email: "cara@example.test", password: caraPw, remember: true });
+  await call(owner, "PATCH", `/api/team/cleaners/${caraAcct.body.id}`, { active: false });
+  check("turning the login off ends a remembered sign-in", (await call(caraKept3.token, "GET", "/api/session")).status === 401);
+  await call(owner, "PATCH", `/api/team/cleaners/${caraAcct.body.id}`, { active: true });
   const caraT = (await login("cara@example.test", caraPw)).token;
   check("staff cleaner signs in", (await call(caraT, "GET", "/api/cleaner/jobs")).status === 200);
   check("owner turns the staff member off", (await call(owner, "PATCH", `/api/staff/${cara}`, { active: false })).body.active === false);
