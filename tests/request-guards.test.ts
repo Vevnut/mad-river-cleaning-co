@@ -60,6 +60,25 @@ try {
     items: [{ description: "Test clean", quantity: 1, unitPrice: 120 }] })).body;
   const print = await fetch(`${base}/api/invoices/${inv.id}/print`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.text());
   check("a property name with $ prints exactly as typed", print.includes("Cabin $&#39; Lodge") && !print.includes("Cabin <table>"));
+
+  // Invoice layout: logo, service property beside Bill To, no doubled company name, $1,234.00 money, terms.
+  db.prepare("UPDATE customers SET name=company_name WHERE id=? AND company_name IS NOT NULL").run(p.customer_id);
+  const big = (await call("POST", "/api/invoices", { customerId: p.customer_id, propertyId: p.id, issueDate: "2026-09-20", dueDate: "2026-10-05",
+    items: [{ description: "Deep clean", quantity: 1, unitPrice: 1234 }] })).body;
+  const sheet = await fetch(`${base}/api/invoices/${big.id}/print`, { headers: { Authorization: `Bearer ${token}` } }).then(r => r.text());
+  const company = (db.prepare("SELECT coalesce(company_name, name) n FROM customers WHERE id=?").get(p.customer_id) as any).n;
+  check("the invoice shows the logo", /<img class="logo" src="data:image\/png;base64,/.test(sheet));
+  check("the service property has its own box", sheet.includes(">Service property<") && sheet.includes("Cabin $&#39; Lodge"));
+  check("the company name isn't printed twice", sheet.split(`>${company.replace(/'/g, "&#39;")}<`).length === 2);
+  check("money has thousands separators", sheet.includes("$1,234.00"));
+  check("payment terms are shown", sheet.includes("Net 15"));
+
+  // An invoice made from a job uses the property's invoice notes, not the cleaner's job notes.
+  db.prepare("UPDATE properties SET invoice_notes=? WHERE id=?").run("Thank you for staying with us!", p.id);
+  const jobId = Number(db.prepare(`INSERT INTO jobs (property_id, customer_id, job_type, scheduled_date, scheduled_time, duration_minutes, status, customer_notes, price, rate_type)
+    VALUES (?,?,?,?,?,?,?,?,?,?)`).run(p.id, p.customer_id, "turnover", "2026-09-19", "10:00", 120, "completed", "Water the plants", 150, "custom").lastInsertRowid);
+  const fromJob = (await call("POST", `/api/invoices/generate-from-job/${jobId}`, {})).body;
+  check("an invoice from a job uses the property's invoice notes", fromJob.notes === "Thank you for staying with us!");
   token = "";
 
   // Behind the proxy each visitor gets their own sign-in limit.

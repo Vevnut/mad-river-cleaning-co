@@ -235,9 +235,8 @@ function publicInvoice(token: string) {
 function printable(inv: any) {
   const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : one("customers", inv.customerId);
   const settings = rows("app_settings")[0];
-  return renderInvoicePrintHtml({ invoice: inv, customer, items: rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id), business: settings })
-    // A replacer function, so a "$&" or "$'" in an address is inserted as plain text.
-    .replace('<table>', () => `<div class="notes-block"><strong>Service property</strong><br>${esc(inv.propertyAddress || "").replace(/\n/g, "<br>")}</div><table>`);
+  return renderInvoicePrintHtml({ invoice: inv, customer, items: rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id),
+    business: settings, serviceProperty: inv.propertyAddress });
 }
 export function completeCheckout(session: any, eventId: string) {
   return sql.transaction(() => {
@@ -398,7 +397,8 @@ export function registerBilling(app: Express) {
     due.setUTCDate(due.getUTCDate() + (rows("app_settings")[0]?.defaultPaymentTermsDays ?? 15));
     res.status(201).json(saveInvoice({ ...req.body, propertyId: j.propertyId, customerId: j.customerId, jobId: j.id,
       issueDate: today(), dueDate: due.toISOString().slice(0, 10), rateType: j.rateType,
-      notes: j.customerNotes || d.notes, items: d.items }, undefined, res.locals.user.email));
+      // The property's invoice notes are written for the customer; the job's notes are instructions for the cleaner.
+      notes: d.notes, items: d.items }, undefined, res.locals.user.email));
   });
   app.get("/api/invoices/:id/items", (req, res) => { invoice(Number(req.params.id)); res.json(rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", Number(req.params.id))); });
   app.get("/api/invoices/:id/activity", (req, res) => { invoice(Number(req.params.id)); res.json(rows("invoice_activity", "invoice_id=? ORDER BY id DESC", Number(req.params.id))); });
