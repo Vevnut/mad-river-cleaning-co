@@ -27,7 +27,7 @@ function fmt$(n: number | null | undefined): string {
 function fmtDate(d: string | null | undefined): string {
   if (!d) return "—";
   const dt = new Date(d + "T00:00:00");
-  if (isNaN(dt.getTime())) return d;
+  if (isNaN(dt.getTime())) return esc(d);
   return dt.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
@@ -142,7 +142,7 @@ export function renderInvoicePrintHtml(opts: {
     .map(
       (it) => `<tr>
         <td><div class="item">${esc(it.description)}</div>${it.descriptionSnapshot ? `<div class="muted">${esc(it.descriptionSnapshot)}</div>` : ""}</td>
-        <td class="right">${it.quantity}</td>
+        <td class="right">${esc(String(it.quantity))}</td>
         <td class="right">${fmt$(it.unitPrice)}</td>
         <td class="right strong">${fmt$(it.amount)}</td>
       </tr>`
