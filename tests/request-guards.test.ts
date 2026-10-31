@@ -73,6 +73,22 @@ try {
   check("money has thousands separators", sheet.includes("$1,234.00"));
   check("payment terms are shown", sheet.includes("Net 15"));
 
+  // Downloadable PDF: a real PDF with a proper file name, for the owner and the customer's link only.
+  const pdfRes = await fetch(`${base}/api/invoices/${big.id}/pdf`, { headers: { Authorization: `Bearer ${token}` } });
+  const pdfBytes = Buffer.from(await pdfRes.arrayBuffer());
+  const disp = pdfRes.headers.get("content-disposition") || "";
+  check("the invoice downloads as a PDF", pdfRes.status === 200 && pdfRes.headers.get("content-type") === "application/pdf" && pdfBytes.subarray(0, 5).toString() === "%PDF-");
+  check("the PDF is named for the business, invoice number and customer",
+    disp.startsWith("attachment;") && decodeURIComponent(disp.split("filename*=UTF-8''")[1] || "") === `${(db.prepare("SELECT business_name n FROM app_settings").get() as any).n} - Invoice ${big.invoiceNumber} - ${company}.pdf`);
+  check("signed-out visitors can't download it", (await fetch(`${base}/api/invoices/${big.id}/pdf`)).status === 401);
+  const link = (db.prepare("SELECT public_token t FROM invoices WHERE id=?").get(big.id) as any).t;
+  db.prepare("UPDATE invoices SET public_token=?, public_enabled=1 WHERE id=?").run(link || "b".repeat(64), big.id);
+  const pubPdf = await fetch(`${base}/api/public/invoices/${link || "b".repeat(64)}/pdf`);
+  check("the customer's invoice link offers the same PDF", pubPdf.status === 200 && Buffer.from(await pubPdf.arrayBuffer()).subarray(0, 5).toString() === "%PDF-");
+  check("a made-up invoice link gets no PDF", (await fetch(`${base}/api/public/invoices/${"c".repeat(64)}/pdf`)).status === 404);
+  db.prepare("UPDATE invoices SET public_enabled=0 WHERE id=?").run(big.id);
+  check("a turned-off invoice link gets no PDF", (await fetch(`${base}/api/public/invoices/${link || "b".repeat(64)}/pdf`)).status === 404);
+
   // An invoice made from a job uses the property's invoice notes, not the cleaner's job notes.
   db.prepare("UPDATE properties SET invoice_notes=? WHERE id=?").run("Thank you for staying with us!", p.id);
   const jobId = Number(db.prepare(`INSERT INTO jobs (property_id, customer_id, job_type, scheduled_date, scheduled_time, duration_minutes, status, customer_notes, price, rate_type)

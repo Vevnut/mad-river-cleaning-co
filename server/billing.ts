@@ -5,6 +5,7 @@ import { z } from "zod";
 import { sqlite as sql } from "./storage";
 import { organizationId } from "./auth";
 import { renderInvoicePrintHtml } from "./invoice-print-template";
+import { invoicePdfFilename, pdfDisposition, renderInvoicePdf } from "./invoice-pdf";
 
 const now = () => new Date().toISOString();
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -232,6 +233,20 @@ function publicInvoice(token: string) {
   if (!inv) fail(404, "Invoice link is not available.");
   return invoice(inv.id);
 }
+function printParts(inv: any) {
+  const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : one("customers", inv.customerId);
+  return { invoice: inv, customer, items: rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id),
+    business: rows("app_settings")[0], serviceProperty: inv.propertyAddress };
+}
+/** Sends the invoice as a named PDF download ("…- Invoice INV-2026-00165 - Customer.pdf"). */
+async function sendPdf(res: any, inv: any, inline: boolean) {
+  const parts = printParts(inv);
+  const pdf = await renderInvoicePdf(parts);
+  res.set({ "Content-Type": "application/pdf", "Content-Length": String(pdf.length),
+    "Content-Disposition": pdfDisposition(invoicePdfFilename(parts.invoice, parts.customer, parts.business), inline),
+    "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
+  res.send(pdf);
+}
 function printable(inv: any) {
   const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : one("customers", inv.customerId);
   const settings = rows("app_settings")[0];
@@ -312,6 +327,7 @@ export function registerPublicBilling(app: Express) {
       items: rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id).map(({ description, descriptionSnapshot, quantity, unitPrice, amount }) => ({ description, descriptionSnapshot, quantity, unitPrice, amount })) });
   });
   app.get("/api/public/invoices/:token/print", (req, res) => res.type("html").send(printable(publicInvoice(String(req.params.token)))));
+  app.get("/api/public/invoices/:token/pdf", (req, res) => sendPdf(res, publicInvoice(String(req.params.token)), req.query.inline === "1"));
   app.post("/api/public/invoices/:token/checkout", async (req, res) => res.json(await createCheckout(publicInvoice(String(req.params.token)))));
 }
 
@@ -403,6 +419,7 @@ export function registerBilling(app: Express) {
   app.get("/api/invoices/:id/items", (req, res) => { invoice(Number(req.params.id)); res.json(rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", Number(req.params.id))); });
   app.get("/api/invoices/:id/activity", (req, res) => { invoice(Number(req.params.id)); res.json(rows("invoice_activity", "invoice_id=? ORDER BY id DESC", Number(req.params.id))); });
   app.get("/api/invoices/:id/print", (req, res) => res.type("html").send(printable(invoice(Number(req.params.id)))));
+  app.get("/api/invoices/:id/pdf", (req, res) => sendPdf(res, invoice(Number(req.params.id)), req.query.inline === "1"));
   app.post("/api/invoices/:id/void", (req, res) => {
     const inv = invoice(Number(req.params.id)); assertUnlocked(inv.id);
     if (inv.amountPaid > 0) fail(409, "A paid invoice cannot be voided. Reconcile/refund payments first.");

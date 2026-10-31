@@ -49,7 +49,7 @@ export default function InvoiceDetailPage() {
           setModal("send");
         } catch (e: any) { setError(e.message); } finally { setBusy(false); }
       }}><Send className="h-4 w-4 mr-2" />Send Invoice</Button>}
-      <Button variant="outline" onClick={() => { setModal("preview"); setError(""); }}><Printer className="h-4 w-4 mr-2" />Preview / PDF</Button>
+      <Button variant="outline" onClick={() => { setModal("preview"); setError(""); }}><Printer className="h-4 w-4 mr-2" />Preview / Download PDF</Button>
       {inv.status !== "canceled" && <><Link href={`/invoices/${id}/edit`}><Button variant="outline">Edit invoice</Button></Link>
         {inv.balanceDue > 0 && <Button variant="outline" onClick={() => { setPayment({ invoiceId: inv.id, amount: inv.balanceDue, method: "cash", paidDate: businessDate(), reference: "", note: "", requestKey: crypto.randomUUID() }); setError(""); setModal("payment"); }}><Plus className="h-4 w-4 mr-2" />Record Payment</Button>}
       </>}
@@ -87,8 +87,8 @@ export default function InvoiceDetailPage() {
     {error && !modal && <p role="alert" className="text-destructive text-sm">{error}</p>}
     <Dialog open={!!modal} onOpenChange={v => !v && !busy && setModal("")}><DialogContent className={modal === "preview" || modal === "send" ? "max-w-3xl max-h-[90vh] overflow-y-auto" : "max-w-lg max-h-[90vh] overflow-y-auto"}>
       <DialogHeader><DialogTitle>{modal === "send" ? "Review & send invoice" : modal === "payment" ? "Record Payment" : modal === "void" ? "Void this invoice?" : "Client invoice preview"}</DialogTitle>
-        <DialogDescription>{modal === "send" ? "Confirm the recipient and complete message before sending." : modal === "payment" ? "Record a payment already received outside online checkout." : modal === "void" ? "This cancels the invoice and disables its payment link. History is retained." : "Print or save a professional PDF."}</DialogDescription></DialogHeader>
-      {modal === "preview" && <InvoicePreview invoiceId={inv.id} />}
+        <DialogDescription>{modal === "send" ? "Confirm the recipient and complete message before sending." : modal === "payment" ? "Record a payment already received outside online checkout." : modal === "void" ? "This cancels the invoice and disables its payment link. History is retained." : "Download the invoice as a PDF to send or keep."}</DialogDescription></DialogHeader>
+      {modal === "preview" && <InvoicePreview invoiceId={inv.id} invoiceNumber={inv.invoiceNumber} />}
       {modal === "send" && <form className="space-y-4" onSubmit={async e => { e.preventDefault(); await action(`${endpoint}/send`, send); }}>
         {send.locked && <p className="text-sm rounded-md border p-3">A previous send has an uncertain result. Review the original message and retry it unchanged to avoid duplicate emails.</p>}
         {!config?.email && <p className="text-sm rounded-md bg-muted p-3">Email is not configured yet. A server administrator must configure Resend before this can be sent. No email has been sent.</p>}
@@ -96,7 +96,7 @@ export default function InvoiceDetailPage() {
         <Field label="Subject"><Input aria-label="Invoice email subject" readOnly={send.locked} required value={send.subject || ""} onChange={e => setSend({ ...send, subject: e.target.value })} /></Field>
         <Field label="Message"><Textarea aria-label="Invoice email message" readOnly={send.locked} value={send.message || ""} onChange={e => setSend({ ...send, message: e.target.value })} /></Field>
         <div className="rounded-md border p-3 text-sm space-y-2"><p>Invoice {inv.invoiceNumber} · Total {formatMoney(inv.total)}</p><p>Balance {formatMoney(inv.balanceDue)} · Due {inv.dueDate}</p><p>{config?.stripe ? `View & Pay Invoice button (${config.mode} card payments)` : "View Invoice button; online card payments unavailable"}</p><p>You may also pay using your usual arrangement with the business. Online payment is optional.</p></div>
-        <details><summary className="text-sm cursor-pointer">View client invoice</summary><div className="mt-3"><InvoicePreview invoiceId={inv.id} /></div></details>
+        <details><summary className="text-sm cursor-pointer">View client invoice</summary><div className="mt-3"><InvoicePreview invoiceId={inv.id} invoiceNumber={inv.invoiceNumber} /></div></details>
         <Button type="submit" disabled={busy || !config?.email}>{busy ? "Sending…" : "Confirm & send invoice"}</Button>
       </form>}
       {modal === "payment" && <form className="space-y-4" onSubmit={e => { e.preventDefault(); action("/api/payments", payment); }}>
