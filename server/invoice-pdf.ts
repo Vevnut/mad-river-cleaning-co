@@ -29,14 +29,15 @@ const STATUS: Record<string, [string, string, string]> = { // label, background,
 export function invoicePdfFilename(inv: PrintInvoice, customer: PrintCustomer, business: PrintBusiness) {
   const clean = (s: string | null | undefined) => String(s ?? "").replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
   const who = clean(customer.companyName) || clean(customer.name);
-  const name = [clean(business.businessName), `Invoice ${clean(inv.invoiceNumber)}`, who].filter(Boolean).join(" - ").slice(0, 150).trim();
-  return `${name || "Invoice"}.pdf`;
+  const name = [clean(business.businessName), `Invoice ${clean(inv.invoiceNumber)}`, who].filter(Boolean).join(" - ");
+  const short = Array.from(name.toWellFormed?.() ?? name).slice(0, 150).join("").trim();
+  return `${short || "Invoice"}.pdf`;
 }
 
 /** Content-Disposition with a plain-ASCII fallback plus the exact UTF-8 name. */
 export function pdfDisposition(filename: string, inline = false) {
   const ascii = filename.normalize("NFKD").replace(/[^\x20-\x7e]/g, "").replace(/["\\%]/g, "") || "Invoice.pdf";
-  return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
+  return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename.toWellFormed?.() ?? filename).replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`;
 }
 
 export function renderInvoicePdf(opts: {
