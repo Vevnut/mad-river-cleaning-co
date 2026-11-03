@@ -46,7 +46,7 @@ export function FullBackup() {
           <Label htmlFor="backup-password">Your password</Label>
           <Input id="backup-password" type="password" autoComplete="current-password" value={password}
             onChange={e => setPassword(e.target.value)} data-testid="input-backup-password" />
-          <p className="text-xs text-muted-foreground">Asked again because the backup contains everything.</p>
+          <p className="text-xs text-muted-foreground">Asked again because the backup contains everything, including customer details and sign-in accounts. The file itself isn't password-protected, so keep it private (don't email it or leave it in a shared folder).</p>
         </div>
         <Button type="submit" disabled={busy || !password} className="gap-2" data-testid="button-download-backup">
           <Download className="h-4 w-4" />{busy ? "Preparing backup…" : "Download full backup"}

@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { existsSync, readFileSync, unlinkSync, mkdtempSync, rmdirSync } from "node:fs";
+import { existsSync, readFileSync, mkdtempSync, statSync, readdirSync, rmSync, lstatSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -12,6 +12,9 @@ const PHOTO_DIR = () => resolve(process.env.PHOTO_DIR || "uploads/job-photos");
 const RECEIPT_DIR = () => resolve(process.env.RECEIPT_DIR || "uploads/expense-receipts");
 // Stored names are always random hex made by the server; anything else is skipped (never a path).
 const SAFE_FILE = /^[a-f0-9]{16,64}\.[a-z0-9]{2,5}$/;
+const MAX_BYTES = 750 * 1048576; // keeps memory use bounded on the host
+const COOLDOWN_MS = 60000;
+let busy = false, lastDone = 0;
 const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
 
 /**
@@ -22,7 +25,17 @@ const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
  *  - manifest.json: row counts, money totals and a SHA-256 for every file, used to prove the move is complete.
  * Nothing in the live database is changed.
  */
+/** Removes temp folders left behind if the server was stopped mid-backup. */
+function reapStale() {
+  for (const n of readdirSync(tmpdir())) {
+    if (!n.startsWith("mrcc-backup-")) continue;
+    const full = join(tmpdir(), n);
+    try { if (Date.now() - statSync(full).mtimeMs > 3600000) rmSync(full, { recursive: true, force: true }); } catch { /* skip */ }
+  }
+}
+
 export function buildFullBackup(now = new Date()) {
+  reapStale();
   const work = mkdtempSync(join(tmpdir(), "mrcc-backup-"));
   const snap = join(work, "database.sqlite");
   try {
@@ -49,12 +62,15 @@ export function buildFullBackup(now = new Date()) {
     const files: Record<string, Uint8Array | [Uint8Array, { level: 0 | 6 }]> = {};
     const fileList: { path: string; size: number; sha256: string }[] = [];
     const missing: string[] = [];
+    let total = dbBytes.length;
     const add = (folder: string, dir: string, rows: any[]) => {
       for (const { file_name } of rows) {
         const name = String(file_name);
         if (!SAFE_FILE.test(name)) { missing.push(`${folder}/${name.slice(0, 80)}`); continue; }
         const full = join(dir, name);
-        if (!existsSync(full)) { missing.push(`${folder}/${name}`); continue; }
+        if (!existsSync(full) || !lstatSync(full).isFile()) { missing.push(`${folder}/${name}`); continue; }
+        total += lstatSync(full).size;
+        if (total > MAX_BYTES) throw Object.assign(new Error("The backup is too large to build in one download."), { status: 413 });
         const body = readFileSync(full);
         files[`${folder}/${name}`] = [body, { level: 0 }]; // photos are already compressed
         fileList.push({ path: `${folder}/${name}`, size: body.length, sha256: sha256(body) });
@@ -74,8 +90,7 @@ export function buildFullBackup(now = new Date()) {
     const iso = now.toISOString(), stamp = `${iso.slice(0, 10)} ${iso.slice(11, 13)}-${iso.slice(14, 16)} UTC`;
     return { zip: Buffer.from(zipSync(files)), filename: `Mad River Cleaning Co. - Full Backup ${stamp}.zip`, manifest };
   } finally {
-    for (const f of [snap, `${snap}-wal`, `${snap}-shm`]) { try { unlinkSync(f); } catch { /* not there */ } }
-    try { rmdirSync(work); } catch { /* already gone */ }
+    try { rmSync(work, { recursive: true, force: true }); } catch { /* reaped next time */ }
   }
 }
 
@@ -87,7 +102,12 @@ export function registerFullBackup(app: Express) {
     const check = confirmPassword(user.id, req.body?.password, "full-backup");
     if (check === "limited") return res.status(429).json({ message: "Too many attempts. Try again in 15 minutes." });
     if (check !== "ok") return res.status(400).json({ message: "That password isn't right." });
-    const { zip, filename } = buildFullBackup();
+    if (busy) return res.status(429).json({ message: "A backup is already being prepared. Try again in a moment." });
+    if (Date.now() - lastDone < COOLDOWN_MS) return res.status(429).json({ message: "A backup was just downloaded. Wait a minute before making another." });
+    busy = true;
+    let built;
+    try { built = buildFullBackup(); lastDone = Date.now(); } finally { busy = false; }
+    const { zip, filename } = built;
     res.set({
       "Content-Type": "application/zip",
       "Content-Disposition": `attachment; filename="${filename}"`,

@@ -78,6 +78,7 @@ try {
   out.close();
   check("live sessions untouched", live("auth_sessions") >= 2);
 
+  check("a second backup right away waits", (await post("/api/backup/full", { password: pw }, owner)).status === 429);
   for (let i = 0; i < 10; i++) await post("/api/backup/full", { password: "wrong-wrong-wrong" }, owner);
   check("password guessing is limited", (await post("/api/backup/full", { password: pw }, owner)).status === 429);
   console.log(`\n${count} checks passed`);
