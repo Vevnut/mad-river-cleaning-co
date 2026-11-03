@@ -1,3 +1,4 @@
+import { registerFullBackup } from "./full-backup";
 import type { Express } from "express";
 import { endLinkedSessions } from "./auth";
 import { createServer } from 'node:http';
@@ -55,6 +56,7 @@ export async function registerRoutes(
   registerSubcontractors(app);
   registerCalendar(app);
   registerCleaner(app);
+  registerFullBackup(app);
   // Normalize legacy fields without ever touching existing invoice snapshots.
   app.use("/api/properties", async (req, res, next) => {
     if (!["POST", "PATCH"].includes(req.method)) return next();

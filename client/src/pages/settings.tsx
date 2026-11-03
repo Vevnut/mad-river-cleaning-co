@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, Building2, FileText, ListChecks, Users, Bell, KeyRound } from "lucide-react";
+import { Plus, Pencil, Trash2, Building2, FileText, ListChecks, Users, Bell, KeyRound, DatabaseBackup } from "lucide-react";
 import type { AppSettings, JobTemplate, Staff } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -18,6 +18,7 @@ import {
 import { JobTemplateDialog } from "@/components/settings/job-template-dialog";
 import { StaffDialog } from "@/components/settings/staff-dialog";
 import { CleanerLogins } from "@/components/settings/cleaner-logins";
+import { FullBackup } from "@/components/settings/full-backup";
 import { formatMoney } from "@/lib/format";
 
 export default function SettingsPage() {
@@ -116,6 +117,9 @@ export default function SettingsPage() {
           </TabsTrigger>
           <TabsTrigger value="notifications" className="gap-1.5" data-testid="tab-notifications">
             <Bell className="h-3.5 w-3.5" /> Notifications
+          </TabsTrigger>
+          <TabsTrigger value="backup" className="gap-1.5" data-testid="tab-backup">
+            <DatabaseBackup className="h-3.5 w-3.5" /> Backup
           </TabsTrigger>
         </TabsList>
         <TabsContent value="services" className="mt-4"><ServiceSettings /></TabsContent>
@@ -302,6 +306,7 @@ export default function SettingsPage() {
         </TabsContent>
 
         <TabsContent value="cleaner-logins" className="mt-4"><CleanerLogins /></TabsContent>
+        <TabsContent value="backup" className="mt-4"><FullBackup /></TabsContent>
 
         {/* Notifications */}
         <TabsContent value="notifications" className="mt-4">

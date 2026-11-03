@@ -46,6 +46,17 @@ export function setPassword(userId: string, password: string) {
 }
 export const endSessions = (userId: string) => sqlite.prepare("DELETE FROM auth_sessions WHERE user_id=?").run(userId);
 
+/** Re-checks a signed-in user's password before a sensitive action (rate limited per user). */
+export function confirmPassword(userId: string, password: unknown, purpose: string): "ok" | "wrong" | "limited" {
+  if (!limitAttempt(hash(`${purpose}:${userId}`), 10)) return "limited";
+  const user = sqlite.prepare("SELECT password_hash FROM auth_users WHERE id=? AND active=1").get(userId) as any;
+  if (!user || typeof password !== "string" || password.length > 128) return "wrong";
+  const [salt, digest] = String(user.password_hash).split(":");
+  const ok = timingSafeEqual(Buffer.from(digest, "hex"), Buffer.from(passwordHash(password, salt).split(":")[1], "hex"));
+  if (ok) sqlite.prepare("DELETE FROM auth_rate_limits WHERE key=?").run(hash(`${purpose}:${userId}`));
+  return ok ? "ok" : "wrong";
+}
+
 export function registerAuth(app: Express) {
   app.use("/api", (_req, res, next) => { res.set("Cache-Control", "no-store"); next(); });
   app.get("/api/auth/status", (_req, res) => {
