@@ -16,6 +16,14 @@ export function errorHandler(err: any, req: Request, res: Response, next: NextFu
   let status = err.status || err.statusCode || 500;
   // Server-side (5xx) errors always get the generic text, even if they carry a status.
   let message = (err.status || err.statusCode) && status < 500 ? err.message : "Something went wrong. Please try again.";
+  // Postgres errors arrive either through server/db.ts (already given SQLite-style codes) or from
+  // Drizzle, which wraps the driver error. Give both the codes the messages below expect.
+  const pg = err.cause && /^\d{5}$/.test(String(err.cause.code)) ? err.cause : /^\d{5}$/.test(String(err.code)) ? err : null;
+  const PG_CODES: Record<string, string> = { "23505": "SQLITE_CONSTRAINT_UNIQUE", "23503": "SQLITE_CONSTRAINT_FOREIGNKEY", "23502": "SQLITE_CONSTRAINT_NOTNULL", "23514": "SQLITE_CONSTRAINT_CHECK" };
+  if (pg && PG_CODES[pg.code]) {
+    const cols = /Key \(([^)]+)\)/.exec(pg.detail ?? "")?.[1]?.split(",").map((c: string) => `${pg.table}.${c.trim()}`).join(", ");
+    err = Object.assign(new Error(cols ? `UNIQUE constraint failed: ${cols}` : pg.message), { code: PG_CODES[pg.code] });
+  }
   const code = String(err.code || "");
   if (err.name === "ZodError") {
     status = 400;

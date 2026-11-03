@@ -1,19 +1,31 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import { pgTable, text, bigint, doublePrecision as real, customType } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 /* ============================================================================
  * Mad River Cleaning Co. — Data Model
- * SQLite now (better-sqlite3 + Drizzle), designed to map 1:1 to Postgres later.
+ * Postgres (Neon) via Drizzle. The layout is the old SQLite one translated 1:1
+ * (server/pg-schema.ts): whole numbers are bigint, money is double precision,
+ * and yes/no fields are stored as 1/0 but read and written as true/false here.
  * JSON list columns (defaultChecklist, beforePhotos, afterPhotos) are stored
  * as TEXT and JSON.stringify/parse'd in application code — see SCHEMA.md.
  * ============================================================================ */
 
+// Column helpers named like the old SQLite ones, so the tables below read the same.
+const id = () => bigint("id", { mode: "number" }).primaryKey().generatedByDefaultAsIdentity();
+const integer = (name: string) => bigint(name, { mode: "number" });
+/** A yes/no column stored as 1/0 (as it was in SQLite), seen as true/false in code. */
+const flag = customType<{ data: boolean; driverData: number }>({
+  dataType: () => "bigint",
+  toDriver: (v) => (v ? 1 : 0),
+  fromDriver: (v) => Number(v) === 1,
+});
+
 // ---------------------------------------------------------------------------
 // 1. customers
 // ---------------------------------------------------------------------------
-export const customers = sqliteTable("customers", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const customers = pgTable("customers", {
+  id: id(),
   name: text("name").notNull(),
   companyName: text("company_name"),
   customerType: text("customer_type", { enum: ["individual", "company"] }).notNull(),
@@ -27,7 +39,7 @@ export const customers = sqliteTable("customers", {
   billingState: text("billing_state").notNull(),
   billingZip: text("billing_zip").notNull(),
   notes: text("notes"),
-  taxExempt: integer("tax_exempt", { mode: "boolean" }).notNull().default(false),
+  taxExempt: flag("tax_exempt").notNull().default(false),
   createdAt: text("created_at").notNull().default(new Date().toISOString()),
 });
 
@@ -41,14 +53,14 @@ export type Customer = typeof customers.$inferSelect;
 // ---------------------------------------------------------------------------
 // 2. contacts
 // ---------------------------------------------------------------------------
-export const contacts = sqliteTable("contacts", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const contacts = pgTable("contacts", {
+  id: id(),
   customerId: integer("customer_id").notNull().references(() => customers.id),
   name: text("name").notNull(),
   role: text("role"),
   email: text("email").notNull(),
   phone: text("phone").notNull(),
-  isPrimary: integer("is_primary", { mode: "boolean" }).notNull().default(false),
+  isPrimary: flag("is_primary").notNull().default(false),
 });
 
 export const insertContactSchema = createInsertSchema(contacts).omit({ id: true });
@@ -58,8 +70,8 @@ export type Contact = typeof contacts.$inferSelect;
 // ---------------------------------------------------------------------------
 // 3. properties
 // ---------------------------------------------------------------------------
-export const properties = sqliteTable("properties", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const properties = pgTable("properties", {
+  id: id(),
   customerId: integer("customer_id").notNull().references(() => customers.id),
   name: text("name").notNull(),
   addressLine1: text("address_line1").notNull(),
@@ -95,7 +107,7 @@ export const properties = sqliteTable("properties", {
   }).notNull(),
   basePrice: real("base_price").notNull(),
   photoUrl: text("photo_url"),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  active: flag("active").notNull().default(true),
 });
 
 const bedCount = z.number().int().min(0).max(50).optional();
@@ -113,14 +125,14 @@ export type Property = typeof properties.$inferSelect;
 // ---------------------------------------------------------------------------
 // 4. staff
 // ---------------------------------------------------------------------------
-export const staff = sqliteTable("staff", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const staff = pgTable("staff", {
+  id: id(),
   name: text("name").notNull(),
   role: text("role", { enum: ["admin", "office", "cleaner"] }).notNull(),
   email: text("email").notNull(),
   phone: text("phone").notNull(),
   colorTag: text("color_tag").notNull(),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  active: flag("active").notNull().default(true),
 });
 
 export const insertStaffSchema = createInsertSchema(staff).omit({ id: true });
@@ -130,8 +142,8 @@ export type Staff = typeof staff.$inferSelect;
 // ---------------------------------------------------------------------------
 // 5. job_templates
 // ---------------------------------------------------------------------------
-export const jobTemplates = sqliteTable("job_templates", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const jobTemplates = pgTable("job_templates", {
+  id: id(),
   name: text("name").notNull(),
   jobType: text("job_type", {
     enum: ["turnover", "deep_clean", "inspection", "one_time", "recurring", "custom"],
@@ -149,11 +161,11 @@ export type JobTemplate = typeof jobTemplates.$inferSelect;
 // ---------------------------------------------------------------------------
 // 6. service_checklists
 // ---------------------------------------------------------------------------
-export const serviceChecklists = sqliteTable("service_checklists", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const serviceChecklists = pgTable("service_checklists", {
+  id: id(),
   jobId: integer("job_id").notNull().references(() => jobs.id),
   label: text("label").notNull(),
-  isCompleted: integer("is_completed", { mode: "boolean" }).notNull().default(false),
+  isCompleted: flag("is_completed").notNull().default(false),
   sortOrder: integer("sort_order").notNull().default(0),
 });
 
@@ -164,8 +176,8 @@ export type ServiceChecklist = typeof serviceChecklists.$inferSelect;
 // ---------------------------------------------------------------------------
 // 7. schedules
 // ---------------------------------------------------------------------------
-export const schedules = sqliteTable("schedules", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const schedules = pgTable("schedules", {
+  id: id(),
   propertyId: integer("property_id").notNull().references(() => properties.id),
   jobTemplateId: integer("job_template_id").references(() => jobTemplates.id),
   frequency: text("frequency", { enum: ["weekly", "biweekly", "monthly", "custom"] }).notNull(),
@@ -173,7 +185,7 @@ export const schedules = sqliteTable("schedules", {
   startDate: text("start_date").notNull(),
   endDate: text("end_date"),
   assignedStaffId: integer("assigned_staff_id").references(() => staff.id),
-  active: integer("active", { mode: "boolean" }).notNull().default(true),
+  active: flag("active").notNull().default(true),
 });
 
 export const insertScheduleSchema = createInsertSchema(schedules).omit({ id: true });
@@ -183,8 +195,8 @@ export type Schedule = typeof schedules.$inferSelect;
 // ---------------------------------------------------------------------------
 // 8. jobs
 // ---------------------------------------------------------------------------
-export const jobs = sqliteTable("jobs", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const jobs = pgTable("jobs", {
+  id: id(),
   propertyId: integer("property_id").notNull().references(() => properties.id),
   customerId: integer("customer_id").notNull().references(() => customers.id),
   scheduleId: integer("schedule_id").references(() => schedules.id),
@@ -216,8 +228,8 @@ export type Job = typeof jobs.$inferSelect;
 // ---------------------------------------------------------------------------
 // 9. invoices
 // ---------------------------------------------------------------------------
-export const invoices = sqliteTable("invoices", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const invoices = pgTable("invoices", {
+  id: id(),
   customerId: integer("customer_id").notNull().references(() => customers.id),
   jobId: integer("job_id").references(() => jobs.id),
   propertyId: integer("property_id").references(() => properties.id),
@@ -229,7 +241,7 @@ export const invoices = sqliteTable("invoices", {
   viewedAt: text("viewed_at"),
   paidAt: text("paid_at"),
   publicToken: text("public_token"),
-  publicEnabled: integer("public_enabled", { mode: "boolean" }).notNull().default(false),
+  publicEnabled: flag("public_enabled").notNull().default(false),
   requestKey: text("request_key"),
   createdAt: text("created_at"),
   updatedAt: text("updated_at"),
@@ -260,8 +272,8 @@ export type Invoice = typeof invoices.$inferSelect;
 // turnover-clean jobs get scheduled around a stay's check-out date. Rendered
 // on the Stays calendar as a multi-day bar spanning check-in \u2192 check-out.
 // ---------------------------------------------------------------------------
-export const stays = sqliteTable("stays", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const stays = pgTable("stays", {
+  id: id(),
   propertyId: integer("property_id").notNull().references(() => properties.id),
   guestName: text("guest_name").notNull(),
   guestPhone: text("guest_phone"),
@@ -283,8 +295,8 @@ export type Stay = typeof stays.$inferSelect;
 // ---------------------------------------------------------------------------
 // 10. invoice_items
 // ---------------------------------------------------------------------------
-export const invoiceItems = sqliteTable("invoice_items", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const invoiceItems = pgTable("invoice_items", {
+  id: id(),
   invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
   description: text("description").notNull(),
   itemType: text("item_type", {
@@ -296,7 +308,7 @@ export const invoiceItems = sqliteTable("invoice_items", {
   sortOrder: integer("sort_order").notNull().default(0),
   sourcePropertyServiceId: integer("source_property_service_id"),
   descriptionSnapshot: text("description_snapshot"),
-  isAutoAdded: integer("is_auto_added", { mode: "boolean" }).notNull().default(false),
+  isAutoAdded: flag("is_auto_added").notNull().default(false),
   lineItemType: text("line_item_type").notNull().default("manual"),
 });
 
@@ -307,8 +319,8 @@ export type InvoiceItem = typeof invoiceItems.$inferSelect;
 // ---------------------------------------------------------------------------
 // 11. payments
 // ---------------------------------------------------------------------------
-export const payments = sqliteTable("payments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const payments = pgTable("payments", {
+  id: id(),
   invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
   amount: real("amount").notNull(),
   method: text("method", { enum: ["card", "cash", "check", "ach", "venmo", "zelle", "bank_transfer", "manual_card", "other"] }).notNull(),
@@ -329,14 +341,14 @@ export type Payment = typeof payments.$inferSelect;
 // ---------------------------------------------------------------------------
 // 12. notes
 // ---------------------------------------------------------------------------
-export const notes = sqliteTable("notes", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const notes = pgTable("notes", {
+  id: id(),
   customerId: integer("customer_id").references(() => customers.id),
   propertyId: integer("property_id").references(() => properties.id),
   jobId: integer("job_id").references(() => jobs.id),
   authorStaffId: integer("author_staff_id").references(() => staff.id),
   body: text("body").notNull(),
-  pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+  pinned: flag("pinned").notNull().default(false),
   createdAt: text("created_at").notNull().default(new Date().toISOString()),
 });
 
@@ -347,8 +359,8 @@ export type Note = typeof notes.$inferSelect;
 // ---------------------------------------------------------------------------
 // 13. attachments
 // ---------------------------------------------------------------------------
-export const attachments = sqliteTable("attachments", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const attachments = pgTable("attachments", {
+  id: id(),
   entityType: text("entity_type", { enum: ["customer", "property", "job", "invoice"] }).notNull(),
   entityId: integer("entity_id").notNull(),
   fileName: text("file_name").notNull(),
@@ -368,8 +380,8 @@ export type Attachment = typeof attachments.$inferSelect;
 // 14. app_settings — singleton row (id always 1), Phase 3.
 // Business info + invoice defaults consumed by invoice creation & print view.
 // ---------------------------------------------------------------------------
-export const appSettings = sqliteTable("app_settings", {
-  id: integer("id").primaryKey({ autoIncrement: true }),
+export const appSettings = pgTable("app_settings", {
+  id: id(),
   businessName: text("business_name").notNull().default("Mad River Cleaning Co."),
   businessAddress: text("business_address").notNull().default(""),
   businessPhone: text("business_phone").notNull().default(""),
@@ -379,10 +391,10 @@ export const appSettings = sqliteTable("app_settings", {
   defaultPaymentTermsDays: integer("default_payment_terms_days").notNull().default(15),
   invoiceNumberPrefix: text("invoice_number_prefix").notNull().default("INV"),
   invoiceFooterNote: text("invoice_footer_note").notNull().default("Thank you for your business."),
-  notifyJobReminders: integer("notify_job_reminders", { mode: "boolean" }).notNull().default(true),
-  notifyInvoiceOverdue: integer("notify_invoice_overdue", { mode: "boolean" }).notNull().default(true),
-  notifyPaymentReceived: integer("notify_payment_received", { mode: "boolean" }).notNull().default(true),
-  notifyDailyDigest: integer("notify_daily_digest", { mode: "boolean" }).notNull().default(false),
+  notifyJobReminders: flag("notify_job_reminders").notNull().default(true),
+  notifyInvoiceOverdue: flag("notify_invoice_overdue").notNull().default(true),
+  notifyPaymentReceived: flag("notify_payment_received").notNull().default(true),
+  notifyDailyDigest: flag("notify_daily_digest").notNull().default(false),
 });
 
 export const insertAppSettingsSchema = createInsertSchema(appSettings).omit({ id: true });

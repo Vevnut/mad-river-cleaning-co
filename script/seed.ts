@@ -9,27 +9,33 @@
  * Run with: npx tsx script/seed.ts
  */
 import { db } from "../server/storage";
+import { closePool } from "../server/db";
+import { ensureMigrated } from "../server/migrations";
 import {
   customers, contacts, properties, staff, jobTemplates,
   schedules, jobs, serviceChecklists, invoices, invoiceItems, payments, appSettings,
 } from "../shared/schema";
 
-function run() {
+/** Fills the database with demo data. Refuses anything but a local database: it deletes first. */
+export async function seedDemo() {
+  const host = new URL(process.env.DATABASE_URL || "postgres://x").hostname;
+  if (!["localhost", "127.0.0.1", "::1"].includes(host)) throw new Error(`Refusing to seed ${host}: the seed deletes data first. Use a local database.`);
+  await ensureMigrated();
   console.log("Seeding Mad River Cleaning Co. database...");
 
   // Clear existing rows for idempotent re-seeding (children first, FK order)
-  db.delete(payments).run();
-  db.delete(invoiceItems).run();
-  db.delete(invoices).run();
-  db.delete(serviceChecklists).run();
-  db.delete(jobs).run();
-  db.delete(schedules).run();
-  db.delete(contacts).run();
-  db.delete(properties).run();
-  db.delete(customers).run();
-  db.delete(staff).run();
-  db.delete(jobTemplates).run();
-  db.delete(appSettings).run();
+  await db.delete(payments);
+  await db.delete(invoiceItems);
+  await db.delete(invoices);
+  await db.delete(serviceChecklists);
+  await db.delete(jobs);
+  await db.delete(schedules);
+  await db.delete(contacts);
+  await db.delete(properties);
+  await db.delete(customers);
+  await db.delete(staff);
+  await db.delete(jobTemplates);
+  await db.delete(appSettings);
 
   // ---------------------------------------------------------------------
   // Customers
@@ -165,9 +171,9 @@ function run() {
     },
   ];
 
-  const insertedCustomers = customerRows.map((c) =>
-    db.insert(customers).values(c).returning().get()
-  );
+  // One at a time, so ids come out in the same order every run.
+  const insertedCustomers: any[] = [];
+  for (const c of customerRows) insertedCustomers.push((await db.insert(customers).values(c).returning())[0]);
   const [
     coastalVista, whiteMountain, whitfields, ferreira,
     hendricks, loonMountain, priyaNair, lakesideCottages,
@@ -178,7 +184,7 @@ function run() {
   // ---------------------------------------------------------------------
   // Contacts (a few key ones — property managers etc.)
   // ---------------------------------------------------------------------
-  db.insert(contacts).values([
+  await db.insert(contacts).values([
     {
       customerId: coastalVista.id,
       name: "Renee Sabatino",
@@ -211,14 +217,14 @@ function run() {
       phone: "603-555-0532",
       isPrimary: true,
     },
-  ]).run();
+  ]);
 
   console.log("Inserted contacts.");
 
   // ---------------------------------------------------------------------
   // Properties (13–15 total)
   // ---------------------------------------------------------------------
-  const insertedProperties = db.insert(properties).values([
+  const insertedProperties = await db.insert(properties).values([
     // Coastal Vista Rentals LLC — 4 properties (North Conway / Conway)
     {
       customerId: coastalVista.id, name: "Saco River Retreat",
@@ -394,27 +400,27 @@ function run() {
       supplyNotes: "Standard kit plus extra beach towels.",
       cleaningFrequency: "weekly", basePrice: 100, photoUrl: null, active: true,
     },
-  ]).returning().all();
+  ]).returning();
 
   console.log(`Inserted ${insertedProperties.length} properties.`);
 
   // ---------------------------------------------------------------------
   // Staff — 1 admin, 1 office, 3 cleaners
   // ---------------------------------------------------------------------
-  const insertedStaff = db.insert(staff).values([
+  const insertedStaff = await db.insert(staff).values([
     { name: "Ellen Marsh", role: "admin", email: "ellen@madrivercleaningco.com", phone: "603-555-1001", colorTag: "#223a59", active: true },
     { name: "Owen Petrucci", role: "office", email: "owen@madrivercleaningco.com", phone: "603-555-1002", colorTag: "#7a39bb", active: true },
     { name: "Maya Lindqvist", role: "cleaner", email: "maya@madrivercleaningco.com", phone: "603-555-1003", colorTag: "#2f9e44", active: true },
     { name: "Jorge Fuentes", role: "cleaner", email: "jorge@madrivercleaningco.com", phone: "603-555-1004", colorTag: "#e8590c", active: true },
     { name: "Alicia Beaumont", role: "cleaner", email: "alicia@madrivercleaningco.com", phone: "603-555-1005", colorTag: "#d6336c", active: true },
-  ]).returning().all();
+  ]).returning();
 
   console.log(`Inserted ${insertedStaff.length} staff members.`);
 
   // ---------------------------------------------------------------------
   // Job templates
   // ---------------------------------------------------------------------
-  const insertedTemplates = db.insert(jobTemplates).values([
+  const insertedTemplates = await db.insert(jobTemplates).values([
     {
       name: "Standard Turnover",
       jobType: "turnover",
@@ -492,7 +498,7 @@ function run() {
       ]),
       description: "Flexible template for one-off requests outside standard job types.",
     },
-  ]).returning().all();
+  ]).returning();
 
   console.log(`Inserted ${insertedTemplates.length} job templates.`);
 
@@ -549,7 +555,7 @@ function run() {
       active: true,
     })),
   ];
-  const insertedSchedules = db.insert(schedules).values(scheduleRows).returning().all();
+  const insertedSchedules = await db.insert(schedules).values(scheduleRows).returning();
   console.log(`Inserted ${insertedSchedules.length} schedules.`);
 
   const hendricksSchedule = insertedSchedules.find(
@@ -743,7 +749,7 @@ function run() {
     });
   }
 
-  const insertedJobs = db.insert(jobs).values(jobRows).returning().all();
+  const insertedJobs = await db.insert(jobs).values(jobRows).returning();
   console.log(`Inserted ${insertedJobs.length} jobs.`);
 
   // --- Service checklists: from job_templates.defaultChecklist, for a few
@@ -765,7 +771,7 @@ function run() {
     }));
   });
   if (checklistRows.length > 0) {
-    db.insert(serviceChecklists).values(checklistRows).run();
+    await db.insert(serviceChecklists).values(checklistRows);
   }
   console.log(`Inserted ${checklistRows.length} checklist items across ${checklistTargets.length} jobs.`);
 
@@ -775,7 +781,7 @@ function run() {
   // payment, 1 draft/unsent — tied to completed jobs, realistic line items
   // (turnover base fee, supplies fee, occasional rush/travel fee, tax).
   // =======================================================================
-  const settingsRow = db.insert(appSettings).values({
+  const settingsRow = (await db.insert(appSettings).values({
     id: 1,
     businessName: "Mad River Cleaning Co.",
     businessAddress: "Thornton, NH",
@@ -789,14 +795,14 @@ function run() {
     notifyInvoiceOverdue: true,
     notifyPaymentReceived: true,
     notifyDailyDigest: false,
-  }).returning().get();
+  }).returning())[0];
   console.log(`Inserted app settings (id ${settingsRow.id}).`);
 
   function round2(n: number): number {
     return Math.round((n + Number.EPSILON) * 100) / 100;
   }
 
-  function makeInvoice(opts: {
+  async function makeInvoice(opts: {
     job: (typeof insertedJobs)[number];
     num: number;
     issueOffsetDays: number;
@@ -845,7 +851,7 @@ function run() {
     if (opts.status === "partial") amountPaid = opts.paidAmountOverride ?? round2(total / 2);
 
     const invoiceNumber = `${settingsRow.invoiceNumberPrefix}-${String(opts.num).padStart(4, "0")}-${opts.job.id}`;
-    const invoice = db.insert(invoices).values({
+    const invoice = (await db.insert(invoices).values({
       customerId: opts.job.customerId,
       jobId: opts.job.id,
       invoiceNumber,
@@ -861,13 +867,13 @@ function run() {
       total,
       amountPaid,
       notes: opts.notes ?? null,
-    }).returning().get();
+    }).returning())[0];
 
-    lineItems.forEach((item, idx) => {
-      db.insert(invoiceItems).values({ ...item, invoiceId: invoice.id, sortOrder: idx }).run();
-    });
+    for (const [idx, item] of lineItems.entries()) {
+      await db.insert(invoiceItems).values({ ...item, invoiceId: invoice.id, sortOrder: idx });
+    }
     if (travelFee > 0) {
-      db.insert(invoiceItems).values({
+      await db.insert(invoiceItems).values({
         description: "Travel fee (out-of-zone property)",
         itemType: "fee",
         quantity: 1,
@@ -875,10 +881,10 @@ function run() {
         amount: travelFee,
         invoiceId: invoice.id,
         sortOrder: lineItems.length,
-      }).run();
+      });
     }
     if (rushFee > 0) {
-      db.insert(invoiceItems).values({
+      await db.insert(invoiceItems).values({
         description: "Rush turnaround fee (same-day booking)",
         itemType: "fee",
         quantity: 1,
@@ -886,25 +892,25 @@ function run() {
         amount: rushFee,
         invoiceId: invoice.id,
         sortOrder: lineItems.length + 1,
-      }).run();
+      });
     }
 
     if (opts.status === "paid") {
-      db.insert(payments).values({
+      await db.insert(payments).values({
         invoiceId: invoice.id,
         amount: amountPaid,
         method: "card",
         paidDate: isoDaysFromToday(opts.dueOffsetDays - 2),
         reference: `CHG-${1000 + opts.num}`,
-      }).run();
+      });
     } else if (opts.status === "partial") {
-      db.insert(payments).values({
+      await db.insert(payments).values({
         invoiceId: invoice.id,
         amount: amountPaid,
         method: "ach",
         paidDate: isoDaysFromToday(opts.issueOffsetDays + 3),
         reference: `ACH-${2000 + opts.num}`,
-      }).run();
+      });
     }
 
     return invoice;
@@ -925,41 +931,43 @@ function run() {
   const invoiceTargets =
     diverseTargets.length >= 6 ? diverseTargets.slice(0, 6) : invoicedOrCompleted.slice(0, 6);
 
-  const seededInvoices = [
+  const seededInvoices: any[] = [];
+  for (const o of [
     // 2 fully paid
-    makeInvoice({
+    {
       job: invoiceTargets[0], num: 1, issueOffsetDays: -12, dueOffsetDays: 3,
       status: "paid", supplyFee: 18,
-    }),
-    makeInvoice({
+    },
+    {
       job: invoiceTargets[1], num: 2, issueOffsetDays: -10, dueOffsetDays: 5,
       status: "paid", supplyFee: 22, rushFee: 25,
-    }),
+    },
     // 2 overdue (past due date, unpaid)
-    makeInvoice({
+    {
       job: invoiceTargets[2], num: 3, issueOffsetDays: -25, dueOffsetDays: -10,
       status: "overdue", supplyFee: 15,
       notes: "Second notice sent — please remit payment at your earliest convenience.",
-    }),
-    makeInvoice({
+    },
+    {
       job: invoiceTargets[3], num: 4, issueOffsetDays: -20, dueOffsetDays: -5,
       status: "overdue", supplyFee: 20, travelFee: 15,
-    }),
+    },
     // 1 partial payment
-    makeInvoice({
+    {
       job: invoiceTargets[4], num: 5, issueOffsetDays: -8, dueOffsetDays: 7,
       status: "partial", supplyFee: 18,
-    }),
+    },
     // 1 draft/unsent
-    makeInvoice({
+    {
       job: invoiceTargets[5], num: 6, issueOffsetDays: 0, dueOffsetDays: 15,
       status: "draft", supplyFee: 20,
       notes: "Draft — review line items before sending to customer.",
-    }),
-  ];
+    },
+  ] as Parameters<typeof makeInvoice>[0][]) seededInvoices.push(await makeInvoice(o));
   console.log(`Inserted ${seededInvoices.length} invoices (2 paid, 2 overdue, 1 partial, 1 draft).`);
 
   console.log("Seed complete.");
 }
 
-run();
+
+if (process.argv[1] && /seed.ts$/.test(process.argv[1])) seedDemo().then(() => closePool()).catch(async (err) => { console.error(err.message || err); await closePool(); process.exit(1); });

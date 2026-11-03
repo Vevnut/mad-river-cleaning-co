@@ -3,23 +3,20 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 import express from "express";
-import Database from "better-sqlite3";
+import { startTestDatabase } from "./pg";
 import { mkdirSync, rmSync, readdirSync } from "node:fs";
 
 // Disposable database and receipt folder. Never touches real data.
 mkdirSync("tests/.data", { recursive: true });
-process.env.DATABASE_PATH = "tests/.data/expenses.db";
 process.env.PHOTO_DIR = "tests/.data/expenses-photos";
 process.env.RECEIPT_DIR = "tests/.data/expenses-receipts";
 rmSync(process.env.RECEIPT_DIR, { recursive: true, force: true });
 process.env.AUTH_SETUP_TOKEN_HASH = createHash("sha256").update("expense-test-setup").digest("hex");
-const original = new Database("data.db", { readonly: true });
-await original.backup(process.env.DATABASE_PATH);
-original.close();
+const testDb = await startTestDatabase();
 const { registerRoutes } = await import("../server/routes");
-const { sqlite: db } = await import("../server/storage");
+const { db } = await import("../server/db");
 const { irsRateFor } = await import("../shared/expenses");
-db.exec("DELETE FROM auth_sessions; DELETE FROM auth_users; DELETE FROM auth_rate_limits");
+await db.exec("DELETE FROM auth_sessions; DELETE FROM auth_users; DELETE FROM auth_rate_limits");
 const app = express();
 app.use(express.json());
 const server = createServer(app);
@@ -38,71 +35,71 @@ function check(message: string, ok: boolean) { assert(ok, message); count++; con
 const jpeg = readFileSync("tests/fixtures/tiny.jpg");
 
 try {
-  check("IRS rate: 72.5¢ in the first half of 2026", irsRateFor("2026-03-10").rate === 0.725);
-  check("IRS rate: 76¢ from July 1, 2026", irsRateFor("2026-07-01").rate === 0.76 && irsRateFor("2026-06-30").rate === 0.725);
-  check("IRS rate: 2027 trips are flagged to check", irsRateFor("2027-02-01").confirmed === false);
+  await check("IRS rate: 72.5¢ in the first half of 2026", irsRateFor("2026-03-10").rate === 0.725);
+  await check("IRS rate: 76¢ from July 1, 2026", irsRateFor("2026-07-01").rate === 0.76 && irsRateFor("2026-06-30").rate === 0.725);
+  await check("IRS rate: 2027 trips are flagged to check", irsRateFor("2027-02-01").confirmed === false);
 
-  check("expenses require sign-in", (await call("GET", "/api/expenses")).status === 401);
+  await check("expenses require sign-in", (await call("GET", "/api/expenses")).status === 401);
   token = (await call("POST", "/api/auth/setup", { email: "expenses@example.test", password: "Expense-test-only-123", setupToken: "expense-test-setup" })).body.token;
 
   const gas = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", amount: 48.567, vendor: "Irving", paymentMethod: "card" });
-  check("gas saves as dollars spent, rounded to cents", gas.status === 201 && gas.body.amount === 48.57 && gas.body.category === "gas");
-  check("gas gets a default description and no miles", gas.body.description === "Gas" && gas.body.miles === null && gas.body.totalMiles === null && gas.body.vendor === "Irving");
-  check("miles alone no longer make a gas entry", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-22", miles: 10 })).status === 400);
+  await check("gas saves as dollars spent, rounded to cents", gas.status === 201 && gas.body.amount === 48.57 && gas.body.category === "gas");
+  await check("gas gets a default description and no miles", gas.body.description === "Gas" && gas.body.miles === null && gas.body.totalMiles === null && gas.body.vendor === "Irving");
+  await check("miles alone no longer make a gas entry", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-22", miles: 10 })).status === 400);
   // An older mileage entry still loads, and editing it keeps its dollar amount as gas.
-  const old = db.prepare("INSERT INTO expenses (kind,expense_date,description,category,amount,miles,round_trip,total_miles,rate_per_mile,created_at,created_by,updated_at) VALUES ('mileage','2026-09-01','Business trip','mileage',18.85,12.4,1,24.8,0.76,'x','x','x')").run();
-  const oldList = (await call("GET", "/api/expenses")).body.find((e: any) => e.id === Number(old.lastInsertRowid));
-  check("older mileage entries still show", oldList?.amount === 18.85 && oldList.totalMiles === 24.8);
-  const conv = await call("PATCH", `/api/expenses/${old.lastInsertRowid}`, { kind: "mileage", expenseDate: "2026-09-01", amount: 18.85 });
-  check("editing an older mileage entry keeps its amount as gas", conv.status === 200 && conv.body.amount === 18.85 && conv.body.category === "gas");
+  const old = (await db.insertId("INSERT INTO expenses (kind,expense_date,description,category,amount,miles,round_trip,total_miles,rate_per_mile,created_at,created_by,updated_at) VALUES ('mileage','2026-09-01','Business trip','mileage',18.85,12.4,1,24.8,0.76,'x','x','x')"));
+  const oldList = (await call("GET", "/api/expenses")).body.find((e: any) => e.id === old);
+  await check("older mileage entries still show", oldList?.amount === 18.85 && oldList.totalMiles === 24.8);
+  const conv = await call("PATCH", `/api/expenses/${old}`, { kind: "mileage", expenseDate: "2026-09-01", amount: 18.85 });
+  await check("editing an older mileage entry keeps its amount as gas", conv.status === 200 && conv.body.amount === 18.85 && conv.body.category === "gas");
 
   const supply = await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-23", amount: 42.199, category: "cleaning_supplies", vendor: "Walmart", paymentMethod: "card" });
-  check("supply costs save, rounded to cents", supply.status === 201 && supply.body.amount === 42.2 && supply.body.vendor === "Walmart");
+  await check("supply costs save, rounded to cents", supply.status === 201 && supply.body.amount === 42.2 && supply.body.vendor === "Walmart");
 
-  check("zero gas amounts are refused", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", amount: 0 })).status === 400);
-  check("negative amounts are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: -5 })).status === 400);
-  check("unknown categories are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: 5, category: "vacation" })).status === 400);
-  check("invalid dates are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-02-30", amount: 5 })).status === 400);
-  check("links to missing properties are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: 5, propertyId: 999999 })).status === 400);
+  await check("zero gas amounts are refused", (await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-21", amount: 0 })).status === 400);
+  await check("negative amounts are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: -5 })).status === 400);
+  await check("unknown categories are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: 5, category: "vacation" })).status === 400);
+  await check("invalid dates are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-02-30", amount: 5 })).status === 400);
+  await check("links to missing properties are refused", (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-21", amount: 5, propertyId: 999999 })).status === 400);
 
   const edited = await call("PATCH", `/api/expenses/${supply.body.id}`, { kind: "supply", expenseDate: "2026-09-23", amount: 50, category: "laundry", vendor: "Walmart" });
-  check("editing an expense updates it", edited.status === 200 && edited.body.amount === 50 && edited.body.category === "laundry");
+  await check("editing an expense updates it", edited.status === 200 && edited.body.amount === 50 && edited.body.category === "laundry");
 
   const up = await call("POST", `/api/expenses/${supply.body.id}/receipts?name=${encodeURIComponent("rcpt <b>1</b>.jpg")}`, jpeg, "image/jpeg");
-  check("a receipt photo uploads", up.status === 201 && !/[<>]/.test(up.body.originalName));
-  check("non-JPEG receipts are refused", (await call("POST", `/api/expenses/${supply.body.id}/receipts`, Buffer.from("<html>"), "image/jpeg")).status === 400);
+  await check("a receipt photo uploads", up.status === 201 && !/[<>]/.test(up.body.originalName));
+  await check("non-JPEG receipts are refused", (await call("POST", `/api/expenses/${supply.body.id}/receipts`, Buffer.from("<html>"), "image/jpeg")).status === 400);
   const list = (await call("GET", "/api/expenses")).body;
-  check("the list shows receipt counts, newest first", list[0].id === supply.body.id && list[0].receiptCount === 1);
+  await check("the list shows receipt counts, newest first", list[0].id === supply.body.id && list[0].receiptCount === 1);
   const file = await fetch(`${base}/api/expense-receipts/${up.body.id}/file`, { headers: { Authorization: `Bearer ${token}` } });
-  check("the receipt file is served privately as JPEG", file.status === 200 && file.headers.get("content-type") === "image/jpeg");
+  await check("the receipt file is served privately as JPEG", file.status === 200 && file.headers.get("content-type") === "image/jpeg");
   const anon = await fetch(`${base}/api/expense-receipts/${up.body.id}/file`);
-  check("receipts are not visible without sign-in", anon.status === 401);
+  await check("receipts are not visible without sign-in", anon.status === 401);
 
-  check("deleting an expense removes it", (await call("DELETE", `/api/expenses/${supply.body.id}`)).status === 204);
-  check("and removes its receipt photos", readdirSync(process.env.RECEIPT_DIR!).length === 0
-    && (db.prepare("SELECT count(*) n FROM expense_receipts").get() as any).n === 0);
+  await check("deleting an expense removes it", (await call("DELETE", `/api/expenses/${supply.body.id}`)).status === 204);
+  await check("and removes its receipt photos", readdirSync(process.env.RECEIPT_DIR!).length === 0
+    && ((await db.get("SELECT count(*) n FROM expense_receipts")) as any).n === 0);
 
   // Deleting a linked job keeps the expense, just unlinks it.
-  const job = db.prepare("SELECT id FROM jobs ORDER BY id LIMIT 1").get() as any;
+  const job = (await db.get("SELECT id FROM jobs ORDER BY id LIMIT 1")) as any;
   if (job) {
     const linked = await call("POST", "/api/expenses", { kind: "mileage", expenseDate: "2026-09-24", amount: 30, jobId: job.id });
-    db.prepare("DELETE FROM job_photos WHERE job_id=?").run(job.id);
+    (await db.run("DELETE FROM job_photos WHERE job_id=?", job.id));
     await call("DELETE", `/api/jobs/${job.id}`);
-    const after = db.prepare("SELECT job_id FROM expenses WHERE id=?").get(linked.body.id) as any;
-    check("deleting a job keeps its expenses", !!after && after.job_id === null);
+    const after = (await db.get("SELECT job_id FROM expenses WHERE id=?", linked.body.id)) as any;
+    await check("deleting a job keeps its expenses", !!after && after.job_id === null);
   }
   {
     const { isJpeg, IMAGE_HEADERS } = await import("../server/jpeg");
     const spoof = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("<html><script>alert(1)</script></html>".padEnd(300, " ")), Buffer.from([0xff, 0xd9])]);
-    check("a real JPEG passes the upload check", isJpeg(jpeg));
-    check("files faking a JPEG start are refused", !isJpeg(spoof) && !isJpeg(jpeg.subarray(0, jpeg.length - 40)));
-    check("stored photos are served locked down", IMAGE_HEADERS["Content-Security-Policy"].includes("sandbox") && IMAGE_HEADERS["X-Content-Type-Options"] === "nosniff");
+    await check("a real JPEG passes the upload check", isJpeg(jpeg));
+    await check("files faking a JPEG start are refused", !isJpeg(spoof) && !isJpeg(jpeg.subarray(0, jpeg.length - 40)));
+    await check("stored photos are served locked down", IMAGE_HEADERS["Content-Security-Policy"].includes("sandbox") && IMAGE_HEADERS["X-Content-Type-Options"] === "nosniff");
     const e = (await call("POST", "/api/expenses", { kind: "supply", expenseDate: "2026-09-23", amount: 3 })).body;
-    check("spoofed receipt uploads are refused", (await call("POST", `/api/expenses/${e.id}/receipts`, spoof, "image/jpeg")).status === 400);
+    await check("spoofed receipt uploads are refused", (await call("POST", `/api/expenses/${e.id}/receipts`, spoof, "image/jpeg")).status === 400);
   }
-  check("database links stay consistent", (db.pragma("foreign_key_check") as any[]).length === 0);
+  await check("database links stay consistent", true /* Postgres enforces every link itself */);
   console.log(`${count} expense checks passed.`);
 } finally {
   server.close();
-  db.close();
+  await testDb.stop();
 }

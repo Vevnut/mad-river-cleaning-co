@@ -1,6 +1,6 @@
 import type { Express, Response } from "express";
 import { z } from "zod";
-import { sqlite } from "./storage";
+import { db } from "./db";
 import { credentials, createAccount, setPassword, endSessions } from "./auth";
 import { subcontractorPay } from "./subcontractors";
 import { photoUpload, listJobPhotos, addJobPhoto, findJobPhoto, sendJobPhoto, deleteJobPhoto } from "./job-photos";
@@ -24,12 +24,12 @@ const OPEN = ["scheduled", "in_progress", "completed"];
 type Me = { email: string; staffId: number | null; subcontractorId: number | null; name: string };
 
 /** The signed-in cleaner. Their staff or subcontractor record must still be active. */
-function me(res: Response): Me {
+async function me(res: Response): Promise<Me> {
   const u = res.locals.user;
   if (u.role !== "cleaner") fail(403, "My jobs is for cleaner logins.");
-  const person = (u.staff_id
-    ? sqlite.prepare("SELECT name, active FROM staff WHERE id=?").get(u.staff_id)
-    : sqlite.prepare("SELECT name, active FROM subcontractors WHERE id=?").get(u.subcontractor_id)) as any;
+  const person = u.staff_id
+    ? await db.get("SELECT name, active FROM staff WHERE id=?", u.staff_id)
+    : await db.get("SELECT name, active FROM subcontractors WHERE id=?", u.subcontractor_id);
   if (!person?.active) fail(403, "Your cleaner login is turned off. Contact the office.");
   return { email: u.email, staffId: u.staff_id ?? null, subcontractorId: u.subcontractor_id ?? null, name: person.name };
 }
@@ -41,7 +41,7 @@ const JOBS = `SELECT j.*, p.name property_name, p.address_line1, p.address_line2
     (SELECT count(*) FROM service_checklists k WHERE k.job_id=j.id AND k.is_completed=1) checklist_done
   FROM jobs j JOIN properties p ON p.id=j.property_id JOIN customers c ON c.id=j.customer_id
   LEFT JOIN job_subcontractors a ON a.job_id=j.id
-  WHERE j.status<>'canceled' AND ((@staff IS NOT NULL AND j.assigned_staff_id=@staff) OR (@sub IS NOT NULL AND a.subcontractor_id=@sub))`;
+  WHERE j.status<>'canceled' AND ((@staff::bigint IS NOT NULL AND j.assigned_staff_id=@staff) OR (@sub::bigint IS NOT NULL AND a.subcontractor_id=@sub))`;
 const who = (m: Me) => ({ staff: m.staffId, sub: m.subcontractorId });
 
 function summary(r: any, m: Me) {
@@ -57,29 +57,28 @@ function summary(r: any, m: Me) {
 }
 
 // Detail, photos and changes use the same window as the list (14 days back, 60 ahead).
-function myJob(m: Me, id: number) {
+async function myJob(m: Me, id: number) {
   const day = today();
-  const r = sqlite.prepare(`${JOBS} AND j.id=@id AND j.scheduled_date>=@from AND j.scheduled_date<=@to`)
-    .get({ ...who(m), id, from: addDays(day, -PAST_DAYS), to: addDays(day, AHEAD_DAYS) }) as any;
+  const r = await db.get(`${JOBS} AND j.id=@id AND j.scheduled_date>=@from AND j.scheduled_date<=@to`, { ...who(m), id, from: addDays(day, -PAST_DAYS), to: addDays(day, AHEAD_DAYS) });
   if (!r) fail(404, "Job not found");
   return r;
 }
-function openJob(m: Me, id: number) {
-  const r = myJob(m, id);
+async function openJob(m: Me, id: number) {
+  const r = await myJob(m, id);
   if (!OPEN.includes(r.status)) fail(409, "This job has been invoiced, so it can't be changed. Contact the office.");
   return r;
 }
 
 const stay = (s: any) => s && { checkInDate: s.check_in_date, checkOutDate: s.check_out_date, guestCount: s.guest_count };
 
-function detail(r: any, m: Me) {
-  const p = sqlite.prepare("SELECT * FROM properties WHERE id=?").get(r.property_id) as any;
+async function detail(r: any, m: Me) {
+  const p = (await db.get("SELECT * FROM properties WHERE id=?", r.property_id))!;
   // Turnover timing: the guests leaving on or before the clean, and the next guests arriving.
   // Guest names and phone numbers stay in the office.
-  const lastOut = sqlite.prepare(`SELECT * FROM stays WHERE property_id=? AND status<>'canceled' AND check_out_date<=?
-    ORDER BY check_out_date DESC LIMIT 1`).get(r.property_id, r.scheduled_date);
-  const nextIn = sqlite.prepare(`SELECT * FROM stays WHERE property_id=? AND status<>'canceled' AND check_in_date>=?
-    ORDER BY check_in_date LIMIT 1`).get(r.property_id, r.scheduled_date);
+  const lastOut = await db.get(`SELECT * FROM stays WHERE property_id=? AND status<>'canceled' AND check_out_date<=?
+    ORDER BY check_out_date DESC LIMIT 1`, r.property_id, r.scheduled_date);
+  const nextIn = await db.get(`SELECT * FROM stays WHERE property_id=? AND status<>'canceled' AND check_in_date>=?
+    ORDER BY check_in_date LIMIT 1`, r.property_id, r.scheduled_date);
   return {
     ...summary(r, m),
     notes: r.customer_notes, damageNotes: r.damage_notes,
@@ -91,18 +90,18 @@ function detail(r: any, m: Me) {
       beds: { king: p.bed_king, queen: p.bed_queen, full: p.bed_full, twin: p.bed_twin, bunk: p.bed_bunk, sofa: p.bed_sofa },
       entryInstructions: p.entry_instructions, accessNotes: p.access_notes, supplyNotes: p.supply_notes,
     },
-    checklistItems: (sqlite.prepare("SELECT id, label, is_completed FROM service_checklists WHERE job_id=? ORDER BY sort_order, id").all(r.id) as any[])
+    checklistItems: (await db.all("SELECT id, label, is_completed FROM service_checklists WHERE job_id=? ORDER BY sort_order, id", r.id))
       .map(k => ({ id: k.id, label: k.label, isCompleted: !!k.is_completed })),
     stays: { lastCheckOut: stay(lastOut), nextCheckIn: stay(nextIn) },
   };
 }
 
 // Photos as a cleaner sees them: whether they added it, not who in the office did.
-const photos = (jobId: number, m: Me) => listJobPhotos(jobId).map(({ createdBy, ...p }: any) => ({ ...p, mine: createdBy === m.email }));
-function myPhoto(m: Me, id: number) {
-  const photo = findJobPhoto(id);
+const photos = async (jobId: number, m: Me) => (await listJobPhotos(jobId)).map(({ createdBy, ...p }: any) => ({ ...p, mine: createdBy === m.email }));
+async function myPhoto(m: Me, id: number) {
+  const photo = await findJobPhoto(id);
   if (!photo) fail(404, "Photo not found");
-  myJob(m, photo.job_id);
+  await myJob(m, photo.job_id);
   return photo;
 }
 
@@ -132,92 +131,91 @@ const ACCOUNTS = `SELECT u.*, coalesce(s.name, b.name) person_name, coalesce(s.a
 
 export function registerCleaner(app: Express) {
   // ---- What a cleaner sees ----
-  app.get("/api/cleaner/me", (_req, res) => {
-    const m = me(res);
-    const pay = m.subcontractorId ? subcontractorPay(m.subcontractorId) : null;
-    const s = sqlite.prepare("SELECT business_name, business_phone, business_email FROM app_settings LIMIT 1").get() as any;
+  app.get("/api/cleaner/me", async (_req, res) => {
+    const m = await me(res);
+    const pay = m.subcontractorId ? await subcontractorPay(m.subcontractorId) : null;
+    const s = await db.get("SELECT business_name, business_phone, business_email FROM app_settings ORDER BY id LIMIT 1");
     const office = { name: s?.business_name || "the office", phone: s?.business_phone || "", email: s?.business_email || "" };
     res.json({ name: m.name, email: m.email, kind: m.staffId ? "staff" : "subcontractor", pay, office });
   });
 
-  app.get("/api/cleaner/jobs", (_req, res) => {
-    const m = me(res), day = today();
-    const list = sqlite.prepare(`${JOBS} AND j.scheduled_date>=@from AND j.scheduled_date<=@to ORDER BY j.scheduled_date, j.scheduled_time, j.id`)
-      .all({ ...who(m), from: addDays(day, -PAST_DAYS), to: addDays(day, AHEAD_DAYS) }) as any[];
+  app.get("/api/cleaner/jobs", async (_req, res) => {
+    const m = await me(res), day = today();
+    const list = await db.all(`${JOBS} AND j.scheduled_date>=@from AND j.scheduled_date<=@to ORDER BY j.scheduled_date, j.scheduled_time, j.id`, { ...who(m), from: addDays(day, -PAST_DAYS), to: addDays(day, AHEAD_DAYS) });
     res.json({ today: day, jobs: list.map(r => summary(r, m)) });
   });
 
-  app.get("/api/cleaner/jobs/:id", (req, res) => {
-    const m = me(res);
-    res.json(detail(myJob(m, Number(req.params.id)), m));
+  app.get("/api/cleaner/jobs/:id", async (req, res) => {
+    const m = await me(res);
+    res.json(await detail(await myJob(m, Number(req.params.id)), m));
   });
 
-  app.patch("/api/cleaner/jobs/:id", (req, res) => {
-    const m = me(res), r = openJob(m, Number(req.params.id));
+  app.patch("/api/cleaner/jobs/:id", async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
     const { damageNotes } = parse(notesSchema, req.body);
-    sqlite.prepare("UPDATE jobs SET damage_notes=? WHERE id=?").run(damageNotes, r.id);
-    res.json(detail(myJob(m, r.id), m));
+    await db.run("UPDATE jobs SET damage_notes=? WHERE id=?", damageNotes, r.id);
+    res.json(await detail(await myJob(m, r.id), m));
   });
 
-  app.patch("/api/cleaner/jobs/:id/checklist/:itemId", (req, res) => {
-    const m = me(res), r = openJob(m, Number(req.params.id));
+  app.patch("/api/cleaner/jobs/:id/checklist/:itemId", async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
     const { isCompleted } = parse(checkSchema, req.body);
-    const info = sqlite.prepare("UPDATE service_checklists SET is_completed=? WHERE id=? AND job_id=?").run(isCompleted ? 1 : 0, Number(req.params.itemId), r.id);
+    const info = await db.run("UPDATE service_checklists SET is_completed=? WHERE id=? AND job_id=?", isCompleted ? 1 : 0, Number(req.params.itemId), r.id);
     if (!info.changes) fail(404, "Checklist item not found");
-    res.json(detail(myJob(m, r.id), m));
+    res.json(await detail(await myJob(m, r.id), m));
   });
 
-  app.post("/api/cleaner/jobs/:id/complete", (req, res) => {
-    const m = me(res), r = openJob(m, Number(req.params.id));
+  app.post("/api/cleaner/jobs/:id/complete", async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
     // Completing never invoices: billing stays with the office.
     if (r.status !== "completed")
-      sqlite.prepare("UPDATE jobs SET status='completed', completed_at=? WHERE id=?").run(new Date().toISOString(), r.id);
-    res.json(detail(myJob(m, r.id), m));
+      await db.run("UPDATE jobs SET status='completed', completed_at=? WHERE id=?", new Date().toISOString(), r.id);
+    res.json(await detail(await myJob(m, r.id), m));
   });
 
-  app.get("/api/cleaner/jobs/:id/photos", (req, res) => {
-    const m = me(res), r = myJob(m, Number(req.params.id));
-    res.json(photos(r.id, m));
+  app.get("/api/cleaner/jobs/:id/photos", async (req, res) => {
+    const m = await me(res), r = await myJob(m, Number(req.params.id));
+    res.json(await photos(r.id, m));
   });
 
-  app.post("/api/cleaner/jobs/:id/photos", photoUpload, (req, res) => {
-    const m = me(res), r = openJob(m, Number(req.params.id));
-    const { createdBy, ...photo } = addJobPhoto(r.id, String(req.query.section || ""), req.body, req.query.name, m.email);
+  app.post("/api/cleaner/jobs/:id/photos", photoUpload, async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
+    const { createdBy, ...photo } = await addJobPhoto(r.id, String(req.query.section || ""), req.body, req.query.name, m.email);
     res.status(201).json({ ...photo, mine: true });
   });
 
-  app.get("/api/cleaner/job-photos/:id/file", (req, res) => sendJobPhoto(res, myPhoto(me(res), Number(req.params.id))));
+  app.get("/api/cleaner/job-photos/:id/file", async (req, res) => sendJobPhoto(res, await myPhoto(await me(res), Number(req.params.id))));
 
-  app.delete("/api/cleaner/job-photos/:id", (req, res) => {
-    const m = me(res), photo = myPhoto(m, Number(req.params.id));
-    openJob(m, photo.job_id);
+  app.delete("/api/cleaner/job-photos/:id", async (req, res) => {
+    const m = await me(res), photo = await myPhoto(m, Number(req.params.id));
+    await openJob(m, photo.job_id);
     if (photo.created_by !== m.email) fail(403, "You can only delete photos you added.");
-    deleteJobPhoto(photo);
+    await deleteJobPhoto(photo);
     res.status(204).send();
   });
 
   // ---- Owners: managing cleaner logins ----
-  app.get("/api/team/cleaners", (_req, res) => {
-    res.json((sqlite.prepare(`${ACCOUNTS} ORDER BY person_name`).all() as any[]).map(account));
+  app.get("/api/team/cleaners", async (_req, res) => {
+    res.json((await db.all(`${ACCOUNTS} ORDER BY person_name`)).map(account));
   });
 
-  app.post("/api/team/cleaners", (req, res) => {
+  app.post("/api/team/cleaners", async (req, res) => {
     const d = parse(accountSchema, req.body);
-    if (d.staffId && !sqlite.prepare("SELECT 1 FROM staff WHERE id=?").get(d.staffId)) fail(400, "Choose an existing staff member.");
-    if (d.subcontractorId && !sqlite.prepare("SELECT 1 FROM subcontractors WHERE id=?").get(d.subcontractorId)) fail(400, "Choose an existing subcontractor.");
-    const id = createAccount(d.email, d.password, { staffId: d.staffId, subcontractorId: d.subcontractorId });
-    res.status(201).json(account(sqlite.prepare(`${ACCOUNTS} AND u.id=?`).get(id)));
+    if (d.staffId && !(await db.get("SELECT 1 FROM staff WHERE id=?", d.staffId))) fail(400, "Choose an existing staff member.");
+    if (d.subcontractorId && !(await db.get("SELECT 1 FROM subcontractors WHERE id=?", d.subcontractorId))) fail(400, "Choose an existing subcontractor.");
+    const id = await createAccount(d.email, d.password, { staffId: d.staffId, subcontractorId: d.subcontractorId });
+    res.status(201).json(account(await db.get(`${ACCOUNTS} AND u.id=?`, id)));
   });
 
-  app.patch("/api/team/cleaners/:id", (req, res) => {
+  app.patch("/api/team/cleaners/:id", async (req, res) => {
     const id = String(req.params.id);
-    if (!sqlite.prepare("SELECT 1 FROM auth_users WHERE id=? AND role='cleaner'").get(id)) fail(404, "Cleaner login not found");
+    if (!(await db.get("SELECT 1 FROM auth_users WHERE id=? AND role='cleaner'", id))) fail(404, "Cleaner login not found");
     const d = parse(accountUpdate, req.body);
-    if (d.password) setPassword(id, d.password);
+    if (d.password) await setPassword(id, d.password);
     if (d.active !== undefined) {
-      sqlite.prepare("UPDATE auth_users SET active=? WHERE id=?").run(d.active ? 1 : 0, id);
-      if (!d.active) endSessions(id);
+      await db.run("UPDATE auth_users SET active=? WHERE id=?", d.active ? 1 : 0, id);
+      if (!d.active) await endSessions(id);
     }
-    res.json(account(sqlite.prepare(`${ACCOUNTS} AND u.id=?`).get(id)));
+    res.json(account(await db.get(`${ACCOUNTS} AND u.id=?`, id)));
   });
 }

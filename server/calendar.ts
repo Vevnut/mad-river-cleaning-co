@@ -2,7 +2,7 @@ import type { Express, Response } from "express";
 import { randomBytes, createHash } from "node:crypto";
 import { z } from "zod";
 import ICAL from "ical.js";
-import { sqlite } from "./storage";
+import { db } from "./db";
 
 /**
  * Google Calendar, both directions, without a Google Cloud project:
@@ -73,13 +73,13 @@ const TYPE_LABEL: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = { scheduled: "Scheduled", in_progress: "In progress", completed: "Completed", invoiced: "Invoiced" };
 
 /** The jobs feed. Leaves out prices, notes, door codes and canceled jobs. */
-export function buildJobsFeed(today = nyDay(new Date())): string {
-  const rows = sqlite.prepare(`SELECT j.id, j.job_type, j.scheduled_date, j.scheduled_time, j.duration_minutes, j.status,
+export async function buildJobsFeed(today = nyDay(new Date())): Promise<string> {
+  const rows = (await db.all(`SELECT j.id, j.job_type, j.scheduled_date, j.scheduled_time, j.duration_minutes, j.status,
       p.name property_name, p.address_line1, p.address_line2, p.city, p.state, p.zip,
       s.name staff_name, sc.name sub_name
     FROM jobs j LEFT JOIN properties p ON p.id=j.property_id LEFT JOIN staff s ON s.id=j.assigned_staff_id
     LEFT JOIN job_subcontractors a ON a.job_id=j.id LEFT JOIN subcontractors sc ON sc.id=a.subcontractor_id
-    WHERE j.status!='canceled' AND j.scheduled_date>=? ORDER BY j.scheduled_date, j.scheduled_time`).all(addDays(today, -FEED_PAST_DAYS)) as any[];
+    WHERE j.status!='canceled' AND j.scheduled_date>=? ORDER BY j.scheduled_date, j.scheduled_time`, addDays(today, -FEED_PAST_DAYS))) as any[];
   const dtstamp = stamp(new Date());
   const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Mad River Cleaning Co.//Jobs//EN", "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
     "X-WR-CALNAME:Mad River Cleaning Jobs", `X-WR-TIMEZONE:${BUSINESS_TZ}`, "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H"];
@@ -230,29 +230,28 @@ let fetcher: Fetcher = defaultFetcher;
 export function setCalendarFetcher(f: Fetcher | null) { fetcher = f || defaultFetcher; }
 
 const running = new Map<number, Promise<void>>();
-function storeEvents(sourceId: number, events: ParsedEvent[]) {
-  sqlite.transaction(() => {
-    sqlite.prepare("DELETE FROM calendar_events WHERE source_id=?").run(sourceId);
-    const ins = sqlite.prepare("INSERT INTO calendar_events (source_id, uid, title, location, all_day, start_at, end_at, start_day, end_day) VALUES (?,?,?,?,?,?,?,?,?)");
-    for (const e of events) ins.run(sourceId, e.uid, e.title, e.location, e.allDay ? 1 : 0, e.start, e.end, e.startDay, e.endDay);
-    sqlite.prepare("UPDATE calendar_sources SET last_synced_at=?, last_error=NULL, event_count=? WHERE id=?").run(now(), events.length, sourceId);
-  })();
+async function storeEvents(sourceId: number, events: ParsedEvent[]) {
+  await db.tx(async () => {
+    await db.run("DELETE FROM calendar_events WHERE source_id=?", sourceId);
+    for (const e of events) await db.run("INSERT INTO calendar_events (source_id, uid, title, location, all_day, start_at, end_at, start_day, end_day) VALUES (?,?,?,?,?,?,?,?,?)", sourceId, e.uid, e.title, e.location, e.allDay ? 1 : 0, e.start, e.end, e.startDay, e.endDay);
+    (await db.run("UPDATE calendar_sources SET last_synced_at=?, last_error=NULL, event_count=? WHERE id=?", now(), events.length, sourceId));
+  });
 }
 export function syncSource(sourceId: number): Promise<void> {
   const existing = running.get(sourceId);
   if (existing) return existing;
   const job = (async () => {
-    const src = sqlite.prepare("SELECT * FROM calendar_sources WHERE id=?").get(sourceId) as any;
+    const src = (await db.get("SELECT * FROM calendar_sources WHERE id=?", sourceId)) as any;
     if (!src) return;
     const today = nyDay(new Date());
     try {
       const events = parseIcs(await fetcher(src.url), addDays(today, -IMPORT_PAST_DAYS), addDays(today, IMPORT_FUTURE_DAYS));
-      storeEvents(sourceId, events);
+      await storeEvents(sourceId, events);
     } catch (e: any) {
-      sqlite.prepare("UPDATE calendar_sources SET last_error=?, last_attempt_at=? WHERE id=?").run(String(e.message || "Sync failed").slice(0, 300), now(), sourceId);
+      (await db.run("UPDATE calendar_sources SET last_error=?, last_attempt_at=? WHERE id=?", String(e.message || "Sync failed").slice(0, 300), now(), sourceId));
       throw e;
     } finally {
-      sqlite.prepare("UPDATE calendar_sources SET last_attempt_at=? WHERE id=?").run(now(), sourceId);
+      (await db.run("UPDATE calendar_sources SET last_attempt_at=? WHERE id=?", now(), sourceId));
     }
   })().finally(() => running.delete(sourceId));
   running.set(sourceId, job);
@@ -260,7 +259,7 @@ export function syncSource(sourceId: number): Promise<void> {
 }
 async function syncStale() {
   const cutoff = new Date(Date.now() - STALE_MS).toISOString();
-  const stale = sqlite.prepare("SELECT id FROM calendar_sources WHERE active=1 AND (last_attempt_at IS NULL OR last_attempt_at<?)").all(cutoff) as any[];
+  const stale = (await db.all("SELECT id FROM calendar_sources WHERE active=1 AND (last_attempt_at IS NULL OR last_attempt_at<?)", cutoff)) as any[];
   await Promise.allSettled(stale.map(s => syncSource(s.id)));
 }
 
@@ -277,69 +276,68 @@ const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 /** Public jobs feed. Must be registered BEFORE `protect()` — the token is the key. */
 export function registerPublicCalendar(app: Express) {
-  app.get("/api/calendar/feed/:file", (req, res) => {
+  app.get("/api/calendar/feed/:file", async (req, res) => {
     const token = String(req.params.file || "").replace(/\.ics$/i, "");
     if (!/^[a-f0-9]{48}$/.test(token)) return res.sendStatus(404);
-    const feed = sqlite.prepare("SELECT id FROM calendar_feeds WHERE token_hash=? AND revoked_at IS NULL").get(sha(token)) as any;
+    const feed = (await db.get("SELECT id FROM calendar_feeds WHERE token_hash=? AND revoked_at IS NULL", sha(token))) as any;
     if (!feed) return res.sendStatus(404);
-    sqlite.prepare("UPDATE calendar_feeds SET last_fetched_at=? WHERE id=?").run(now(), feed.id);
+    (await db.run("UPDATE calendar_feeds SET last_fetched_at=? WHERE id=?", now(), feed.id));
     res.set({ "Content-Type": "text/calendar; charset=utf-8", "Content-Disposition": 'inline; filename="mad-river-jobs.ics"',
       "Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex" });
-    res.send(buildJobsFeed());
+    res.send(await buildJobsFeed());
   });
 }
 
 export function registerCalendar(app: Express) {
-  const activeFeed = () => sqlite.prepare("SELECT * FROM calendar_feeds WHERE revoked_at IS NULL ORDER BY id DESC LIMIT 1").get() as any;
+  const activeFeed = async () => (await db.get("SELECT * FROM calendar_feeds WHERE revoked_at IS NULL ORDER BY id DESC LIMIT 1")) as any;
   const feedOut = (r: any) => r ? { token: r.token, createdAt: r.created_at, createdBy: r.created_by, lastFetchedAt: r.last_fetched_at } : null;
 
-  app.get("/api/calendar/feed", (_req, res) => res.json({ feed: feedOut(activeFeed()) }));
+  app.get("/api/calendar/feed", async (_req, res) => res.json({ feed: feedOut(await activeFeed()) }));
   // Create a link, or reset it: any older link stops working immediately.
-  app.post("/api/calendar/feed", (_req, res) => {
+  app.post("/api/calendar/feed", async (_req, res) => {
     const token = randomBytes(24).toString("hex");
-    sqlite.transaction(() => {
-      sqlite.prepare("UPDATE calendar_feeds SET revoked_at=? WHERE revoked_at IS NULL").run(now());
-      sqlite.prepare("INSERT INTO calendar_feeds (token, token_hash, created_at, created_by) VALUES (?,?,?,?)").run(token, sha(token), now(), actor(res));
-    })();
-    res.status(201).json({ feed: feedOut(activeFeed()) });
+    await db.tx(async () => {
+      (await db.run("UPDATE calendar_feeds SET revoked_at=? WHERE revoked_at IS NULL", now()));
+      (await db.run("INSERT INTO calendar_feeds (token, token_hash, created_at, created_by) VALUES (?,?,?,?)", token, sha(token), now(), actor(res)));
+    });
+    res.status(201).json({ feed: feedOut(await activeFeed()) });
   });
-  app.delete("/api/calendar/feed", (_req, res) => {
-    sqlite.prepare("UPDATE calendar_feeds SET revoked_at=? WHERE revoked_at IS NULL").run(now());
+  app.delete("/api/calendar/feed", async (_req, res) => {
+    (await db.run("UPDATE calendar_feeds SET revoked_at=? WHERE revoked_at IS NULL", now()));
     res.sendStatus(204);
   });
 
-  app.get("/api/calendar/sources", (_req, res) => {
-    res.json((sqlite.prepare("SELECT * FROM calendar_sources ORDER BY id").all() as any[]).map(source));
+  app.get("/api/calendar/sources", async (_req, res) => {
+    res.json(((await db.all("SELECT * FROM calendar_sources ORDER BY id")) as any[]).map(source));
   });
   app.post("/api/calendar/sources", async (req, res) => {
     const parsed = sourceSchema.safeParse(req.body);
     if (!parsed.success) fail(400, parsed.error.issues[0]?.message || "Check the details and try again.");
     const url = normalizeGoogleIcalUrl(parsed.data.url);
-    if (sqlite.prepare("SELECT 1 FROM calendar_sources WHERE url=?").get(url)) fail(409, "That calendar is already added.");
+    if ((await db.get("SELECT 1 FROM calendar_sources WHERE url=?", url))) fail(409, "That calendar is already added.");
     // Read it once before saving, so a bad address never gets stored.
     const today = nyDay(new Date());
     const events = parseIcs(await fetcher(url), addDays(today, -IMPORT_PAST_DAYS), addDays(today, IMPORT_FUTURE_DAYS));
-    const count = (sqlite.prepare("SELECT count(*) n FROM calendar_sources").get() as any).n;
-    const info = sqlite.prepare("INSERT INTO calendar_sources (name, url, color, active, created_at, created_by) VALUES (?,?,?,1,?,?)")
-      .run(parsed.data.name, url, COLORS[count % COLORS.length], now(), actor(res));
-    const id = Number(info.lastInsertRowid);
-    storeEvents(id, events);
-    sqlite.prepare("UPDATE calendar_sources SET last_attempt_at=? WHERE id=?").run(now(), id);
-    res.status(201).json(source(sqlite.prepare("SELECT * FROM calendar_sources WHERE id=?").get(id)));
+    const count = ((await db.get("SELECT count(*) n FROM calendar_sources")) as any).n;
+    const info = (await db.run("INSERT INTO calendar_sources (name, url, color, active, created_at, created_by) VALUES (?,?,?,1,?,?) RETURNING id", parsed.data.name, url, COLORS[count % COLORS.length], now(), actor(res)));
+    const id = Number(info.rows[0].id);
+    await storeEvents(id, events);
+    (await db.run("UPDATE calendar_sources SET last_attempt_at=? WHERE id=?", now(), id));
+    res.status(201).json(source((await db.get("SELECT * FROM calendar_sources WHERE id=?", id))));
   });
   app.post("/api/calendar/sources/:id/sync", async (req, res) => {
     const id = Number(req.params.id);
-    if (!sqlite.prepare("SELECT 1 FROM calendar_sources WHERE id=?").get(id)) fail(404, "Calendar not found");
+    if (!(await db.get("SELECT 1 FROM calendar_sources WHERE id=?", id))) fail(404, "Calendar not found");
     await syncSource(id);
-    res.json(source(sqlite.prepare("SELECT * FROM calendar_sources WHERE id=?").get(id)));
+    res.json(source((await db.get("SELECT * FROM calendar_sources WHERE id=?", id))));
   });
   // Disconnects the calendar from this app only. Nothing in Google is touched.
-  app.delete("/api/calendar/sources/:id", (req, res) => {
+  app.delete("/api/calendar/sources/:id", async (req, res) => {
     const id = Number(req.params.id);
-    sqlite.transaction(() => {
-      sqlite.prepare("DELETE FROM calendar_events WHERE source_id=?").run(id);
-      if (!sqlite.prepare("DELETE FROM calendar_sources WHERE id=?").run(id).changes) fail(404, "Calendar not found");
-    })();
+    await db.tx(async () => {
+      (await db.run("DELETE FROM calendar_events WHERE source_id=?", id));
+      if (!(await db.run("DELETE FROM calendar_sources WHERE id=?", id)).changes) fail(404, "Calendar not found");
+    });
     res.sendStatus(204);
   });
 
@@ -348,8 +346,8 @@ export function registerCalendar(app: Express) {
     if (!from.success || !to.success || from.data > to.data) fail(400, "Pick a valid date range.");
     if (addDays(from.data, 120) < to.data) fail(400, "Pick a shorter date range.");
     await Promise.race([syncStale(), new Promise(r => setTimeout(r, 8000))]);
-    const rows = sqlite.prepare(`SELECT e.*, s.name source_name, s.color FROM calendar_events e JOIN calendar_sources s ON s.id=e.source_id
-      WHERE s.active=1 AND e.end_day>=? AND e.start_day<=? ORDER BY e.all_day DESC, e.start_at`).all(from.data, to.data) as any[];
+    const rows = (await db.all(`SELECT e.*, s.name source_name, s.color FROM calendar_events e JOIN calendar_sources s ON s.id=e.source_id
+      WHERE s.active=1 AND e.end_day>=? AND e.start_day<=? ORDER BY e.all_day DESC, e.start_at`, from.data, to.data)) as any[];
     res.json(rows.map(r => ({ id: r.id, sourceId: r.source_id, sourceName: r.source_name, color: r.color, title: r.title, location: r.location,
       allDay: !!r.all_day, start: r.start_at, end: r.end_at, startDay: r.start_day, endDay: r.end_day })));
   });

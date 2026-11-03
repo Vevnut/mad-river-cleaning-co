@@ -271,7 +271,7 @@ export async function registerRoutes(
     }
     const member = await storage.updateStaff(Number(req.params.id), parsed.data as Partial<InsertStaff>);
     if (!member) return res.status(404).json({ message: "Staff member not found" });
-    if (!member.active) endLinkedSessions({ staffId: member.id });
+    if (!member.active) await endLinkedSessions({ staffId: member.id });
     res.json(member);
   });
 

@@ -42,6 +42,7 @@
     "@radix-ui/react-tooltip": "^1.2.0",
     "@supabase/supabase-js": "^2.49.4",
     "@tanstack/react-query": "^5.60.5",
+    "@vercel/blob": "2.7.0",
     "better-sqlite3": "^11.7.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -63,6 +64,7 @@
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
     "pdfkit": "^0.17.2",
+    "pg": "8.23.0",
     "react": "^18.3.1",
     "react-day-picker": "^8.10.1",
     "react-dom": "^18.3.1",
@@ -80,6 +82,8 @@
     "zod-validation-error": "^5.0.0"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@electric-sql/pglite-socket": "0.2.11",
     "@tailwindcss/typography": "^0.5.15",
     "@tailwindcss/vite": "^4.1.18",
     "@types/better-sqlite3": "^7.6.12",
@@ -89,6 +93,7 @@
     "@types/passport": "^1.0.16",
     "@types/passport-local": "^1.0.38",
     "@types/pdfkit": "^0.17.7",
+    "@types/pg": "8.23.1",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@types/ws": "^8.5.13",

@@ -1,6 +1,10 @@
 # Mad River Cleaning Co. — guide for AI coding assistants
 
-Property-cleaning, scheduling and invoicing app for a small business. React + TypeScript frontend (Vite, Tailwind, shadcn/ui), Express backend, SQLite via better-sqlite3 and Drizzle.
+Property-cleaning, scheduling and invoicing app for a small business. React + TypeScript frontend (Vite, Tailwind, shadcn/ui), Express backend, Postgres (Neon) via `pg` and Drizzle, photos/receipts in a private Vercel Blob store. Hosted on Vercel: `api/index.js` → `dist/server.mjs` (built from `server/vercel.ts`), static site from `dist/public`. See PORT-STATUS.md for the move off SQLite.
+
+- `DATABASE_URL` (Postgres) is required; `BLOB_READ_WRITE_TOKEN` switches file storage to Vercel Blob (otherwise `uploads/`). Raw SQL goes through `server/db.ts` (`db.get/all/run/insertId`, `db.tx`), always `await`ed.
+- Tests need no database: each starts an in-process Postgres (PGlite, `tests/pg.ts`) with the demo seed. `script/seed.ts` refuses non-local databases.
+- Moving data from the old SQLite app: `npx tsx script/import-sqlite.ts <full-backup.zip>` (refuses a non-empty target without `--replace`; verifies rows, money totals and file checksums).
 
 ## Commands
 

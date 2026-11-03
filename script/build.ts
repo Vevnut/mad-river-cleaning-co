@@ -57,6 +57,20 @@ async function buildAll() {
     external: externals,
     logLevel: "info",
   });
+
+  // The Vercel function bundle (api/index.js imports it). Only the app's own code is bundled;
+  // npm packages stay in node_modules so Vercel ships them with their data files (pdfkit fonts).
+  console.log("building Vercel function...");
+  await esbuild({
+    entryPoints: ["server/vercel.ts"],
+    platform: "node",
+    bundle: true,
+    format: "esm",
+    packages: "external",
+    outfile: "dist/server.mjs",
+    define: { "process.env.NODE_ENV": '"production"' },
+    logLevel: "info",
+  });
 }
 
 buildAll().catch((err) => {

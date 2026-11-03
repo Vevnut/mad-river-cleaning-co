@@ -1,0 +1,13 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist/public",
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 30,
+      "includeFiles": "{node_modules/pdfkit/js/data/**,client/public/favicon-192.png}"
+    }
+  },
+  "rewrites": [{ "source": "/api/(.*)", "destination": "/api" }]
+}

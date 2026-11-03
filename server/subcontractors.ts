@@ -1,7 +1,7 @@
 import type { Express, Response } from "express";
 import { endLinkedSessions } from "./auth";
 import { z } from "zod";
-import { sqlite } from "./storage";
+import { db } from "./db";
 import { SUB_PAYMENT_METHODS, EARNED_STATUSES } from "@shared/subcontractors";
 
 /**
@@ -54,19 +54,19 @@ const payment = (r: any) => r && ({
   id: r.id, subcontractorId: r.subcontractor_id, paidDate: r.paid_date, amount: r.amount, method: r.method,
   reference: r.reference, jobId: r.job_id, note: r.note, createdAt: r.created_at, createdBy: r.created_by,
 });
-const exists = (table: string, id: number) => !!sqlite.prepare(`SELECT 1 FROM ${table} WHERE id=?`).get(id);
+const exists = async (table: string, id: number) => !!(await db.get(`SELECT 1 FROM ${table} WHERE id=?`, id));
 const earnedIn = EARNED_STATUSES.map(s => `'${s}'`).join(",");
 
-function withTotals(r: any) {
-  return { ...sub(r), ...subcontractorPay(r.id) };
+async function withTotals(r: any) {
+  return { ...sub(r), ...(await subcontractorPay(r.id)) };
 }
 /** Pay totals for one subcontractor. Also shown to them on their own cleaner page. */
-export function subcontractorPay(id: number) {
+export async function subcontractorPay(id: number) {
   const year = today().slice(0, 4);
-  const earned = (sqlite.prepare(`SELECT coalesce(sum(a.pay),0) v, count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN (${earnedIn})`).get(id) as any);
-  const upcoming = (sqlite.prepare(`SELECT count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN ('scheduled','in_progress')`).get(id) as any).n;
-  const paid = (sqlite.prepare("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=?").get(id) as any).v;
-  const paidThisYear = (sqlite.prepare("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=? AND paid_date>=? AND paid_date<=?").get(id, `${year}-01-01`, `${year}-12-31`) as any).v;
+  const earned = ((await db.get(`SELECT coalesce(sum(a.pay),0) v, count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN (${earnedIn})`, id)) as any);
+  const upcoming = ((await db.get(`SELECT count(*) n FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id WHERE a.subcontractor_id=? AND j.status IN ('scheduled','in_progress')`, id)) as any).n;
+  const paid = ((await db.get("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=?", id)) as any).v;
+  const paidThisYear = ((await db.get("SELECT coalesce(sum(amount),0) v FROM subcontractor_payments WHERE subcontractor_id=? AND paid_date>=? AND paid_date<=?", id, `${year}-01-01`, `${year}-12-31`)) as any).v;
   return { earned: cents(earned.v), completedJobs: earned.n, upcomingJobs: upcoming, paid: cents(paid), owed: cents(earned.v - paid), paidThisYear: cents(paidThisYear) };
 }
 const columns = (d: z.infer<typeof subSchema>) => ({
@@ -75,95 +75,93 @@ const columns = (d: z.infer<typeof subSchema>) => ({
 });
 
 export function registerSubcontractors(app: Express) {
-  app.get("/api/subcontractors", (_req, res) => {
-    res.json((sqlite.prepare("SELECT * FROM subcontractors ORDER BY active DESC, name COLLATE NOCASE").all() as any[]).map(withTotals));
+  app.get("/api/subcontractors", async (_req, res) => {
+    res.json(await Promise.all((await db.all("SELECT * FROM subcontractors ORDER BY active DESC, lower(name)")).map(withTotals)));
   });
 
-  app.get("/api/subcontractors/:id", (req, res) => {
-    const r = sqlite.prepare("SELECT * FROM subcontractors WHERE id=?").get(Number(req.params.id));
+  app.get("/api/subcontractors/:id", async (req, res) => {
+    const r = (await db.get("SELECT * FROM subcontractors WHERE id=?", Number(req.params.id)));
     if (!r) fail(404, "Subcontractor not found");
-    const jobs = (sqlite.prepare(`SELECT a.job_id, a.pay, j.scheduled_date, j.status, j.job_type, j.property_id, p.name property_name
+    const jobs = ((await db.all(`SELECT a.job_id, a.pay, j.scheduled_date, j.status, j.job_type, j.property_id, p.name property_name
       FROM job_subcontractors a JOIN jobs j ON j.id=a.job_id LEFT JOIN properties p ON p.id=j.property_id
-      WHERE a.subcontractor_id=? ORDER BY j.scheduled_date DESC, j.id DESC`).all(Number(req.params.id)) as any[])
+      WHERE a.subcontractor_id=? ORDER BY j.scheduled_date DESC, j.id DESC`, Number(req.params.id))) as any[])
       .map(j => ({ jobId: j.job_id, pay: j.pay, scheduledDate: j.scheduled_date, status: j.status, jobType: j.job_type, propertyId: j.property_id, propertyName: j.property_name }));
-    const payments = (sqlite.prepare("SELECT * FROM subcontractor_payments WHERE subcontractor_id=? ORDER BY paid_date DESC, id DESC").all(Number(req.params.id)) as any[]).map(payment);
-    res.json({ subcontractor: withTotals(r), jobs, payments });
+    const payments = ((await db.all("SELECT * FROM subcontractor_payments WHERE subcontractor_id=? ORDER BY paid_date DESC, id DESC", Number(req.params.id))) as any[]).map(payment);
+    res.json({ subcontractor: await withTotals(r), jobs, payments });
   });
 
-  app.post("/api/subcontractors", (req, res) => {
+  app.post("/api/subcontractors", async (req, res) => {
     const c = columns(parse(subSchema, req.body));
     const keys = Object.keys(c);
-    const info = sqlite.prepare(`INSERT INTO subcontractors (${keys.join(",")},created_at,updated_at) VALUES (${keys.map(() => "?").join(",")},?,?)`).run(...Object.values(c), now(), now());
-    res.status(201).json(withTotals(sqlite.prepare("SELECT * FROM subcontractors WHERE id=?").get(info.lastInsertRowid)));
+    const info = (await db.run(`INSERT INTO subcontractors (${keys.join(",")},created_at,updated_at) VALUES (${keys.map(() => "?").join(",")},?,?) RETURNING id`, ...Object.values(c), now(), now()));
+    res.status(201).json(await withTotals((await db.get("SELECT * FROM subcontractors WHERE id=?", info.rows[0].id))));
   });
 
-  app.patch("/api/subcontractors/:id", (req, res) => {
+  app.patch("/api/subcontractors/:id", async (req, res) => {
     const id = Number(req.params.id);
-    if (!exists("subcontractors", id)) fail(404, "Subcontractor not found");
+    if (!(await exists("subcontractors", id))) fail(404, "Subcontractor not found");
     const c = columns(parse(subSchema, req.body));
-    sqlite.prepare(`UPDATE subcontractors SET ${Object.keys(c).map(k => `${k}=?`).join(",")}, updated_at=? WHERE id=?`).run(...Object.values(c), now(), id);
-    if (!(sqlite.prepare("SELECT active FROM subcontractors WHERE id=?").get(id) as any).active) endLinkedSessions({ subcontractorId: id });
-    res.json(withTotals(sqlite.prepare("SELECT * FROM subcontractors WHERE id=?").get(id)));
+    (await db.run(`UPDATE subcontractors SET ${Object.keys(c).map(k => `${k}=?`).join(",")}, updated_at=? WHERE id=?`, ...Object.values(c), now(), id));
+    if (!((await db.get("SELECT active FROM subcontractors WHERE id=?", id)) as any).active) await endLinkedSessions({ subcontractorId: id });
+    res.json(await withTotals((await db.get("SELECT * FROM subcontractors WHERE id=?", id))));
   });
 
-  app.delete("/api/subcontractors/:id", (req, res) => {
+  app.delete("/api/subcontractors/:id", async (req, res) => {
     const id = Number(req.params.id);
-    if (!exists("subcontractors", id)) fail(404, "Subcontractor not found");
-    const jobs = (sqlite.prepare("SELECT count(*) n FROM job_subcontractors WHERE subcontractor_id=?").get(id) as any).n;
-    const pays = (sqlite.prepare("SELECT count(*) n FROM subcontractor_payments WHERE subcontractor_id=?").get(id) as any).n;
+    if (!(await exists("subcontractors", id))) fail(404, "Subcontractor not found");
+    const jobs = ((await db.get("SELECT count(*) n FROM job_subcontractors WHERE subcontractor_id=?", id)) as any).n;
+    const pays = ((await db.get("SELECT count(*) n FROM subcontractor_payments WHERE subcontractor_id=?", id)) as any).n;
     if (jobs || pays) fail(409, `This subcontractor has ${[jobs && `${jobs} job${jobs === 1 ? "" : "s"}`, pays && `${pays} payment${pays === 1 ? "" : "s"}`].filter(Boolean).join(" and ")} on record, which you'll need for taxes. Mark them inactive instead.`);
-    sqlite.prepare("DELETE FROM subcontractors WHERE id=?").run(id);
+    (await db.run("DELETE FROM subcontractors WHERE id=?", id));
     res.status(204).send();
   });
 
   // ---------------- job assignment ----------------
-  const assignment = (jobId: number) => {
-    const r = sqlite.prepare("SELECT a.*, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id WHERE a.job_id=?").get(jobId) as any;
+  const assignment = async (jobId: number) => {
+    const r = (await db.get("SELECT a.*, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id WHERE a.job_id=?", jobId)) as any;
     return r ? { jobId: r.job_id, subcontractorId: r.subcontractor_id, pay: r.pay, subcontractorName: r.name } : null;
   };
   // Every job's subcontractor at once, so lists and the schedule can show who's on each job.
-  app.get("/api/job-subcontractors", (_req, res) => {
-    res.json((sqlite.prepare("SELECT a.job_id, a.subcontractor_id, a.pay, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id ORDER BY a.job_id").all() as any[])
+  app.get("/api/job-subcontractors", async (_req, res) => {
+    res.json(((await db.all("SELECT a.job_id, a.subcontractor_id, a.pay, s.name FROM job_subcontractors a JOIN subcontractors s ON s.id=a.subcontractor_id ORDER BY a.job_id")) as any[])
       .map(r => ({ jobId: r.job_id, subcontractorId: r.subcontractor_id, pay: r.pay, subcontractorName: r.name })));
   });
-  app.get("/api/jobs/:id/subcontractor", (req, res) => {
+  app.get("/api/jobs/:id/subcontractor", async (req, res) => {
     const id = Number(req.params.id);
-    if (!exists("jobs", id)) fail(404, "Job not found");
-    res.json(assignment(id));
+    if (!(await exists("jobs", id))) fail(404, "Job not found");
+    res.json(await assignment(id));
   });
-  app.put("/api/jobs/:id/subcontractor", (req, res) => {
+  app.put("/api/jobs/:id/subcontractor", async (req, res) => {
     const id = Number(req.params.id);
-    if (!exists("jobs", id)) fail(404, "Job not found");
+    if (!(await exists("jobs", id))) fail(404, "Job not found");
     const d = parse(assignSchema, req.body);
     if (d.subcontractorId === null) {
-      sqlite.prepare("DELETE FROM job_subcontractors WHERE job_id=?").run(id);
+      (await db.run("DELETE FROM job_subcontractors WHERE job_id=?", id));
       return res.json(null);
     }
-    const s = sqlite.prepare("SELECT * FROM subcontractors WHERE id=?").get(d.subcontractorId) as any;
+    const s = (await db.get("SELECT * FROM subcontractors WHERE id=?", d.subcontractorId)) as any;
     if (!s) fail(400, "That subcontractor no longer exists.");
     const pay = cents(d.pay ?? s.default_pay ?? 0);
-    sqlite.prepare(`INSERT INTO job_subcontractors (job_id,subcontractor_id,pay,assigned_at,assigned_by) VALUES (?,?,?,?,?)
-      ON CONFLICT(job_id) DO UPDATE SET subcontractor_id=excluded.subcontractor_id, pay=excluded.pay, assigned_at=excluded.assigned_at, assigned_by=excluded.assigned_by`)
-      .run(id, s.id, pay, now(), actor(res));
-    res.json(assignment(id));
+    (await db.run(`INSERT INTO job_subcontractors (job_id,subcontractor_id,pay,assigned_at,assigned_by) VALUES (?,?,?,?,?)
+      ON CONFLICT(job_id) DO UPDATE SET subcontractor_id=excluded.subcontractor_id, pay=excluded.pay, assigned_at=excluded.assigned_at, assigned_by=excluded.assigned_by`, id, s.id, pay, now(), actor(res)));
+    res.json(await assignment(id));
   });
 
   // ---------------- payments ----------------
-  app.get("/api/subcontractor-payments", (_req, res) => {
-    res.json((sqlite.prepare("SELECT * FROM subcontractor_payments ORDER BY paid_date DESC, id DESC").all() as any[]).map(payment));
+  app.get("/api/subcontractor-payments", async (_req, res) => {
+    res.json(((await db.all("SELECT * FROM subcontractor_payments ORDER BY paid_date DESC, id DESC")) as any[]).map(payment));
   });
-  app.post("/api/subcontractor-payments", (req, res) => {
+  app.post("/api/subcontractor-payments", async (req, res) => {
     const d = parse(paymentSchema, req.body);
-    if (!exists("subcontractors", d.subcontractorId)) fail(400, "That subcontractor no longer exists.");
-    if (d.jobId && !exists("jobs", d.jobId)) fail(400, "That job no longer exists.");
-    const info = sqlite.prepare("INSERT INTO subcontractor_payments (subcontractor_id,paid_date,amount,method,reference,job_id,note,created_at,created_by) VALUES (?,?,?,?,?,?,?,?,?)")
-      .run(d.subcontractorId, d.paidDate, cents(d.amount), d.method, d.reference, d.jobId, d.note, now(), actor(res));
-    res.status(201).json(payment(sqlite.prepare("SELECT * FROM subcontractor_payments WHERE id=?").get(info.lastInsertRowid)));
+    if (!(await exists("subcontractors", d.subcontractorId))) fail(400, "That subcontractor no longer exists.");
+    if (d.jobId && !(await exists("jobs", d.jobId))) fail(400, "That job no longer exists.");
+    const info = (await db.run("INSERT INTO subcontractor_payments (subcontractor_id,paid_date,amount,method,reference,job_id,note,created_at,created_by) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id", d.subcontractorId, d.paidDate, cents(d.amount), d.method, d.reference, d.jobId, d.note, now(), actor(res)));
+    res.status(201).json(payment((await db.get("SELECT * FROM subcontractor_payments WHERE id=?", info.rows[0].id))));
   });
-  app.delete("/api/subcontractor-payments/:id", (req, res) => {
+  app.delete("/api/subcontractor-payments/:id", async (req, res) => {
     const id = Number(req.params.id);
-    if (!exists("subcontractor_payments", id)) fail(404, "Payment not found");
-    sqlite.prepare("DELETE FROM subcontractor_payments WHERE id=?").run(id);
+    if (!(await exists("subcontractor_payments", id))) fail(404, "Payment not found");
+    (await db.run("DELETE FROM subcontractor_payments WHERE id=?", id));
     res.status(204).send();
   });
 }

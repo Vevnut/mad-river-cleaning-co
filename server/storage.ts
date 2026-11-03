@@ -19,10 +19,9 @@ import type {
   AppSettings, InsertAppSettings,
   Stay, InsertStay,
 } from "@shared/schema";
-import { drizzle } from "drizzle-orm/better-sqlite3";
-import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { db as sql, getPool } from "./db";
 import { eq, and, gte, lte, type SQL } from "drizzle-orm";
-import { migrate } from "./migrations";
 
 export interface JobFilter {
   status?: string;
@@ -53,12 +52,8 @@ export class DeleteConflictError extends Error {
   }
 }
 
-export const sqlite = new Database(process.env.DATABASE_PATH || "data.db");
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
-migrate(sqlite);
-
-export const db = drizzle(sqlite);
+// Drizzle over the same Postgres pool the raw-SQL modules use (server/db.ts).
+export const db = drizzle(getPool());
 
 export interface IStorage {
   // --- customers (full CRUD, Phase 1) ---
@@ -167,22 +162,22 @@ export interface IStorage {
 export class DatabaseStorage implements IStorage {
   // ---------------- customers ----------------
   async getCustomers(): Promise<Customer[]> {
-    return db.select().from(customers).all();
+    return db.select().from(customers);
   }
   async getCustomer(id: number): Promise<Customer | undefined> {
-    return db.select().from(customers).where(eq(customers.id, id)).get();
+    return (await db.select().from(customers).where(eq(customers.id, id)))[0];
   }
   async createCustomer(data: InsertCustomer): Promise<Customer> {
-    return db.insert(customers).values(data).returning().get();
+    return (await db.insert(customers).values(data).returning())[0];
   }
   async updateCustomer(id: number, data: Partial<InsertCustomer>): Promise<Customer | undefined> {
-    return db.update(customers).set(data).where(eq(customers.id, id)).returning().get();
+    return (await db.update(customers).set(data).where(eq(customers.id, id)).returning())[0];
   }
   async deleteCustomer(id: number): Promise<boolean> {
     const [propertyCount, jobCount, invoiceCount] = [
-      db.select().from(properties).where(eq(properties.customerId, id)).all().length,
-      db.select().from(jobs).where(eq(jobs.customerId, id)).all().length,
-      db.select().from(invoices).where(eq(invoices.customerId, id)).all().length,
+      (await db.select().from(properties).where(eq(properties.customerId, id))).length,
+      (await db.select().from(jobs).where(eq(jobs.customerId, id))).length,
+      (await db.select().from(invoices).where(eq(invoices.customerId, id))).length,
     ];
     if (propertyCount > 0 || jobCount > 0 || invoiceCount > 0) {
       const parts = [
@@ -196,47 +191,47 @@ export class DatabaseStorage implements IStorage {
     }
     // Contacts and notes are exclusively owned by the customer, so they're
     // safe to clear out automatically.
-    db.delete(contacts).where(eq(contacts.customerId, id)).run();
-    db.delete(notes).where(eq(notes.customerId, id)).run();
-    return db.delete(customers).where(eq(customers.id, id)).run().changes > 0;
+    await db.delete(contacts).where(eq(contacts.customerId, id));
+    await db.delete(notes).where(eq(notes.customerId, id));
+    return ((await db.delete(customers).where(eq(customers.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- contacts ----------------
   async getContactsByCustomer(customerId: number): Promise<Contact[]> {
-    return db.select().from(contacts).where(eq(contacts.customerId, customerId)).all();
+    return db.select().from(contacts).where(eq(contacts.customerId, customerId));
   }
   async getContact(id: number): Promise<Contact | undefined> {
-    return db.select().from(contacts).where(eq(contacts.id, id)).get();
+    return (await db.select().from(contacts).where(eq(contacts.id, id)))[0];
   }
   async createContact(data: InsertContact): Promise<Contact> {
-    return db.insert(contacts).values(data).returning().get();
+    return (await db.insert(contacts).values(data).returning())[0];
   }
   async updateContact(id: number, data: Partial<InsertContact>): Promise<Contact | undefined> {
-    return db.update(contacts).set(data).where(eq(contacts.id, id)).returning().get();
+    return (await db.update(contacts).set(data).where(eq(contacts.id, id)).returning())[0];
   }
   async deleteContact(id: number): Promise<boolean> {
-    return db.delete(contacts).where(eq(contacts.id, id)).run().changes > 0;
+    return ((await db.delete(contacts).where(eq(contacts.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- properties ----------------
   async getProperties(): Promise<Property[]> {
-    return db.select().from(properties).all();
+    return db.select().from(properties);
   }
   async getProperty(id: number): Promise<Property | undefined> {
-    return db.select().from(properties).where(eq(properties.id, id)).get();
+    return (await db.select().from(properties).where(eq(properties.id, id)))[0];
   }
   async getPropertiesByCustomer(customerId: number): Promise<Property[]> {
-    return db.select().from(properties).where(eq(properties.customerId, customerId)).all();
+    return db.select().from(properties).where(eq(properties.customerId, customerId));
   }
   async createProperty(data: InsertProperty): Promise<Property> {
-    return db.insert(properties).values(data).returning().get();
+    return (await db.insert(properties).values(data).returning())[0];
   }
   async updateProperty(id: number, data: Partial<InsertProperty>): Promise<Property | undefined> {
-    return db.update(properties).set(data).where(eq(properties.id, id)).returning().get();
+    return (await db.update(properties).set(data).where(eq(properties.id, id)).returning())[0];
   }
   async deleteProperty(id: number): Promise<boolean> {
-    const jobCount = db.select().from(jobs).where(eq(jobs.propertyId, id)).all().length;
-    const scheduleCount = db.select().from(schedules).where(eq(schedules.propertyId, id)).all().length;
+    const jobCount = (await db.select().from(jobs).where(eq(jobs.propertyId, id))).length;
+    const scheduleCount = (await db.select().from(schedules).where(eq(schedules.propertyId, id))).length;
     if (jobCount > 0 || scheduleCount > 0) {
       const parts = [
         jobCount > 0 ? `${jobCount} job${jobCount === 1 ? "" : "s"}` : null,
@@ -246,113 +241,113 @@ export class DatabaseStorage implements IStorage {
         `Can't delete this property — it still has ${parts.join(", ")}. Delete or reassign those first.`,
       );
     }
-    db.delete(notes).where(eq(notes.propertyId, id)).run();
+    await db.delete(notes).where(eq(notes.propertyId, id));
     // Expenses are tax records: keep them, just unlink the property.
-    sqlite.prepare("UPDATE expenses SET property_id=NULL WHERE property_id=?").run(id);
-    return db.delete(properties).where(eq(properties.id, id)).run().changes > 0;
+    await sql.run("UPDATE expenses SET property_id=NULL WHERE property_id=?", id);
+    return ((await db.delete(properties).where(eq(properties.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- notes ----------------
   async getNotes(filter?: { customerId?: number; propertyId?: number; jobId?: number }): Promise<Note[]> {
     if (filter?.customerId !== undefined) {
-      return db.select().from(notes).where(eq(notes.customerId, filter.customerId)).all();
+      return db.select().from(notes).where(eq(notes.customerId, filter.customerId));
     }
     if (filter?.propertyId !== undefined) {
-      return db.select().from(notes).where(eq(notes.propertyId, filter.propertyId)).all();
+      return db.select().from(notes).where(eq(notes.propertyId, filter.propertyId));
     }
     if (filter?.jobId !== undefined) {
-      return db.select().from(notes).where(eq(notes.jobId, filter.jobId)).all();
+      return db.select().from(notes).where(eq(notes.jobId, filter.jobId));
     }
-    return db.select().from(notes).all();
+    return db.select().from(notes);
   }
   async getNote(id: number): Promise<Note | undefined> {
-    return db.select().from(notes).where(eq(notes.id, id)).get();
+    return (await db.select().from(notes).where(eq(notes.id, id)))[0];
   }
   async createNote(data: InsertNote): Promise<Note> {
-    return db.insert(notes).values({ ...data, createdAt: new Date().toISOString() }).returning().get();
+    return (await db.insert(notes).values({ ...data, createdAt: new Date().toISOString() }).returning())[0];
   }
   async updateNote(id: number, data: Partial<InsertNote>): Promise<Note | undefined> {
-    return db.update(notes).set(data).where(eq(notes.id, id)).returning().get();
+    return (await db.update(notes).set(data).where(eq(notes.id, id)).returning())[0];
   }
   async deleteNote(id: number): Promise<boolean> {
-    return db.delete(notes).where(eq(notes.id, id)).run().changes > 0;
+    return ((await db.delete(notes).where(eq(notes.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- staff ----------------
   async getStaffList(): Promise<Staff[]> {
-    return db.select().from(staff).all();
+    return db.select().from(staff);
   }
   async getStaffMember(id: number): Promise<Staff | undefined> {
-    return db.select().from(staff).where(eq(staff.id, id)).get();
+    return (await db.select().from(staff).where(eq(staff.id, id)))[0];
   }
   async createStaff(data: InsertStaff): Promise<Staff> {
-    return db.insert(staff).values(data).returning().get();
+    return (await db.insert(staff).values(data).returning())[0];
   }
   async updateStaff(id: number, data: Partial<InsertStaff>): Promise<Staff | undefined> {
-    return db.update(staff).set(data).where(eq(staff.id, id)).returning().get();
+    return (await db.update(staff).set(data).where(eq(staff.id, id)).returning())[0];
   }
   async deleteStaff(id: number): Promise<boolean> {
     // Staff assignments are nullable everywhere they're referenced, so a
     // departing staff member shouldn't be blocked by their job history —
     // unassign them instead of deleting or blocking.
-    db.update(jobs).set({ assignedStaffId: null }).where(eq(jobs.assignedStaffId, id)).run();
-    db.update(schedules).set({ assignedStaffId: null }).where(eq(schedules.assignedStaffId, id)).run();
-    db.update(notes).set({ authorStaffId: null }).where(eq(notes.authorStaffId, id)).run();
-    return db.delete(staff).where(eq(staff.id, id)).run().changes > 0;
+    await db.update(jobs).set({ assignedStaffId: null }).where(eq(jobs.assignedStaffId, id));
+    await db.update(schedules).set({ assignedStaffId: null }).where(eq(schedules.assignedStaffId, id));
+    await db.update(notes).set({ authorStaffId: null }).where(eq(notes.authorStaffId, id));
+    return ((await db.delete(staff).where(eq(staff.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- job_templates ----------------
   async getJobTemplates(): Promise<JobTemplate[]> {
-    return db.select().from(jobTemplates).all();
+    return db.select().from(jobTemplates);
   }
   async getJobTemplate(id: number): Promise<JobTemplate | undefined> {
-    return db.select().from(jobTemplates).where(eq(jobTemplates.id, id)).get();
+    return (await db.select().from(jobTemplates).where(eq(jobTemplates.id, id)))[0];
   }
   async createJobTemplate(data: InsertJobTemplate): Promise<JobTemplate> {
-    return db.insert(jobTemplates).values(data).returning().get();
+    return (await db.insert(jobTemplates).values(data).returning())[0];
   }
   async updateJobTemplate(id: number, data: Partial<InsertJobTemplate>): Promise<JobTemplate | undefined> {
-    return db.update(jobTemplates).set(data).where(eq(jobTemplates.id, id)).returning().get();
+    return (await db.update(jobTemplates).set(data).where(eq(jobTemplates.id, id)).returning())[0];
   }
   async deleteJobTemplate(id: number): Promise<boolean> {
-    db.update(jobs).set({ jobTemplateId: null }).where(eq(jobs.jobTemplateId, id)).run();
-    db.update(schedules).set({ jobTemplateId: null }).where(eq(schedules.jobTemplateId, id)).run();
-    return db.delete(jobTemplates).where(eq(jobTemplates.id, id)).run().changes > 0;
+    await db.update(jobs).set({ jobTemplateId: null }).where(eq(jobs.jobTemplateId, id));
+    await db.update(schedules).set({ jobTemplateId: null }).where(eq(schedules.jobTemplateId, id));
+    return ((await db.delete(jobTemplates).where(eq(jobTemplates.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- service_checklists ----------------
   async getChecklistItemsByJob(jobId: number): Promise<ServiceChecklist[]> {
-    return db.select().from(serviceChecklists).where(eq(serviceChecklists.jobId, jobId)).all();
+    return db.select().from(serviceChecklists).where(eq(serviceChecklists.jobId, jobId));
   }
   async createChecklistItem(data: InsertServiceChecklist): Promise<ServiceChecklist> {
-    return db.insert(serviceChecklists).values(data).returning().get();
+    return (await db.insert(serviceChecklists).values(data).returning())[0];
   }
   async updateChecklistItem(id: number, data: Partial<InsertServiceChecklist>): Promise<ServiceChecklist | undefined> {
-    return db.update(serviceChecklists).set(data).where(eq(serviceChecklists.id, id)).returning().get();
+    return (await db.update(serviceChecklists).set(data).where(eq(serviceChecklists.id, id)).returning())[0];
   }
   async deleteChecklistItem(id: number): Promise<boolean> {
-    return db.delete(serviceChecklists).where(eq(serviceChecklists.id, id)).run().changes > 0;
+    return ((await db.delete(serviceChecklists).where(eq(serviceChecklists.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- schedules ----------------
   async getSchedules(): Promise<Schedule[]> {
-    return db.select().from(schedules).all();
+    return db.select().from(schedules);
   }
   async getSchedule(id: number): Promise<Schedule | undefined> {
-    return db.select().from(schedules).where(eq(schedules.id, id)).get();
+    return (await db.select().from(schedules).where(eq(schedules.id, id)))[0];
   }
   async getSchedulesByProperty(propertyId: number): Promise<Schedule[]> {
-    return db.select().from(schedules).where(eq(schedules.propertyId, propertyId)).all();
+    return db.select().from(schedules).where(eq(schedules.propertyId, propertyId));
   }
   async createSchedule(data: InsertSchedule): Promise<Schedule> {
-    return db.insert(schedules).values(data).returning().get();
+    return (await db.insert(schedules).values(data).returning())[0];
   }
   async updateSchedule(id: number, data: Partial<InsertSchedule>): Promise<Schedule | undefined> {
-    return db.update(schedules).set(data).where(eq(schedules.id, id)).returning().get();
+    return (await db.update(schedules).set(data).where(eq(schedules.id, id)).returning())[0];
   }
   async deleteSchedule(id: number): Promise<boolean> {
-    db.update(jobs).set({ scheduleId: null }).where(eq(jobs.scheduleId, id)).run();
-    return db.delete(schedules).where(eq(schedules.id, id)).run().changes > 0;
+    await db.update(jobs).set({ scheduleId: null }).where(eq(jobs.scheduleId, id));
+    return ((await db.delete(schedules).where(eq(schedules.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- jobs ----------------
@@ -364,23 +359,23 @@ export class DatabaseStorage implements IStorage {
     if (filter?.propertyId !== undefined) conditions.push(eq(jobs.propertyId, filter.propertyId));
     if (filter?.jobType) conditions.push(eq(jobs.jobType, filter.jobType as any));
 
-    if (conditions.length === 0) return db.select().from(jobs).all();
-    return db.select().from(jobs).where(and(...conditions)).all();
+    if (conditions.length === 0) return db.select().from(jobs);
+    return db.select().from(jobs).where(and(...conditions));
   }
   async getJob(id: number): Promise<Job | undefined> {
-    return db.select().from(jobs).where(eq(jobs.id, id)).get();
+    return (await db.select().from(jobs).where(eq(jobs.id, id)))[0];
   }
   async getJobsByProperty(propertyId: number): Promise<Job[]> {
-    return db.select().from(jobs).where(eq(jobs.propertyId, propertyId)).all();
+    return db.select().from(jobs).where(eq(jobs.propertyId, propertyId));
   }
   async getJobsByCustomer(customerId: number): Promise<Job[]> {
-    return db.select().from(jobs).where(eq(jobs.customerId, customerId)).all();
+    return db.select().from(jobs).where(eq(jobs.customerId, customerId));
   }
   async createJob(data: InsertJob): Promise<Job> {
-    return db.insert(jobs).values(data).returning().get();
+    return (await db.insert(jobs).values(data).returning())[0];
   }
   async updateJob(id: number, data: Partial<InsertJob>): Promise<Job | undefined> {
-    return db.update(jobs).set(data).where(eq(jobs.id, id)).returning().get();
+    return (await db.update(jobs).set(data).where(eq(jobs.id, id)).returning())[0];
   }
   async deleteJob(id: number): Promise<boolean> {
     // Checklist items only ever exist to serve their job, so they cascade.
@@ -388,17 +383,17 @@ export class DatabaseStorage implements IStorage {
     // block, so a job's billing/history isn't lost when the job itself is
     // removed.
     // Damage/walkthrough photos are records worth keeping: never delete them silently.
-    const photoCount = (sqlite.prepare("SELECT count(*) n FROM job_photos WHERE job_id=?").get(id) as any).n;
+    const photoCount = Number((await sql.get("SELECT count(*) n FROM job_photos WHERE job_id=?", id))!.n);
     if (photoCount > 0)
       throw new DeleteConflictError(`Can't delete this job — it has ${photoCount} photo${photoCount === 1 ? "" : "s"}. Delete the photos first.`);
-    db.delete(serviceChecklists).where(eq(serviceChecklists.jobId, id)).run();
-    db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id)).run();
-    db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id)).run();
-    sqlite.prepare("UPDATE expenses SET job_id=NULL WHERE job_id=?").run(id);
+    await db.delete(serviceChecklists).where(eq(serviceChecklists.jobId, id));
+    await db.update(invoices).set({ jobId: null }).where(eq(invoices.jobId, id));
+    await db.update(notes).set({ jobId: null }).where(eq(notes.jobId, id));
+    await sql.run("UPDATE expenses SET job_id=NULL WHERE job_id=?", id);
     // Subcontractor payments are money records: keep them, just unlink the job.
-    sqlite.prepare("UPDATE subcontractor_payments SET job_id=NULL WHERE job_id=?").run(id);
-    sqlite.prepare("DELETE FROM job_subcontractors WHERE job_id=?").run(id);
-    return db.delete(jobs).where(eq(jobs.id, id)).run().changes > 0;
+    await sql.run("UPDATE subcontractor_payments SET job_id=NULL WHERE job_id=?", id);
+    await sql.run("DELETE FROM job_subcontractors WHERE job_id=?", id);
+    return ((await db.delete(jobs).where(eq(jobs.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- stays ----------------
@@ -410,95 +405,94 @@ export class DatabaseStorage implements IStorage {
     if (filter?.dateTo) conditions.push(lte(stays.checkInDate, filter.dateTo));
     if (filter?.dateFrom) conditions.push(gte(stays.checkOutDate, filter.dateFrom));
 
-    if (conditions.length === 0) return db.select().from(stays).all();
-    return db.select().from(stays).where(and(...conditions)).all();
+    if (conditions.length === 0) return db.select().from(stays);
+    return db.select().from(stays).where(and(...conditions));
   }
   async getStay(id: number): Promise<Stay | undefined> {
-    return db.select().from(stays).where(eq(stays.id, id)).get();
+    return (await db.select().from(stays).where(eq(stays.id, id)))[0];
   }
   async getStaysByProperty(propertyId: number): Promise<Stay[]> {
-    return db.select().from(stays).where(eq(stays.propertyId, propertyId)).all();
+    return db.select().from(stays).where(eq(stays.propertyId, propertyId));
   }
   async createStay(data: InsertStay): Promise<Stay> {
-    return db.insert(stays).values(data).returning().get();
+    return (await db.insert(stays).values(data).returning())[0];
   }
   async updateStay(id: number, data: Partial<InsertStay>): Promise<Stay | undefined> {
-    return db.update(stays).set(data).where(eq(stays.id, id)).returning().get();
+    return (await db.update(stays).set(data).where(eq(stays.id, id)).returning())[0];
   }
   async deleteStay(id: number): Promise<boolean> {
-    return db.delete(stays).where(eq(stays.id, id)).run().changes > 0;
+    return ((await db.delete(stays).where(eq(stays.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- invoices ----------------
   async getInvoices(): Promise<Invoice[]> {
-    return db.select().from(invoices).all();
+    return db.select().from(invoices);
   }
   async getInvoice(id: number): Promise<Invoice | undefined> {
-    return db.select().from(invoices).where(eq(invoices.id, id)).get();
+    return (await db.select().from(invoices).where(eq(invoices.id, id)))[0];
   }
   async getInvoicesByCustomer(customerId: number): Promise<Invoice[]> {
-    return db.select().from(invoices).where(eq(invoices.customerId, customerId)).all();
+    return db.select().from(invoices).where(eq(invoices.customerId, customerId));
   }
   async createInvoice(data: InsertInvoice): Promise<Invoice> {
-    return db.insert(invoices).values(data).returning().get();
+    return (await db.insert(invoices).values(data).returning())[0];
   }
   async updateInvoice(id: number, data: Partial<InsertInvoice>): Promise<Invoice | undefined> {
-    return db.update(invoices).set(data).where(eq(invoices.id, id)).returning().get();
+    return (await db.update(invoices).set(data).where(eq(invoices.id, id)).returning())[0];
   }
   async deleteInvoice(id: number): Promise<boolean> {
     // Line items and payments only ever exist to serve their invoice, so
     // they cascade automatically.
-    db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id)).run();
-    db.delete(payments).where(eq(payments.invoiceId, id)).run();
-    return db.delete(invoices).where(eq(invoices.id, id)).run().changes > 0;
+    await db.delete(invoiceItems).where(eq(invoiceItems.invoiceId, id));
+    await db.delete(payments).where(eq(payments.invoiceId, id));
+    return ((await db.delete(invoices).where(eq(invoices.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- invoice_items ----------------
   async getInvoiceItems(invoiceId: number): Promise<InvoiceItem[]> {
-    return db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId)).all();
+    return db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
   }
   async createInvoiceItem(data: InsertInvoiceItem): Promise<InvoiceItem> {
-    return db.insert(invoiceItems).values(data).returning().get();
+    return (await db.insert(invoiceItems).values(data).returning())[0];
   }
   async updateInvoiceItem(id: number, data: Partial<InsertInvoiceItem>): Promise<InvoiceItem | undefined> {
-    return db.update(invoiceItems).set(data).where(eq(invoiceItems.id, id)).returning().get();
+    return (await db.update(invoiceItems).set(data).where(eq(invoiceItems.id, id)).returning())[0];
   }
   async deleteInvoiceItem(id: number): Promise<boolean> {
-    return db.delete(invoiceItems).where(eq(invoiceItems.id, id)).run().changes > 0;
+    return ((await db.delete(invoiceItems).where(eq(invoiceItems.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- payments ----------------
   async getPaymentsByInvoice(invoiceId: number): Promise<Payment[]> {
-    return db.select().from(payments).where(eq(payments.invoiceId, invoiceId)).all();
+    return db.select().from(payments).where(eq(payments.invoiceId, invoiceId));
   }
   async createPayment(data: InsertPayment): Promise<Payment> {
-    return db.insert(payments).values(data).returning().get();
+    return (await db.insert(payments).values(data).returning())[0];
   }
   async deletePayment(id: number): Promise<boolean> {
-    return db.delete(payments).where(eq(payments.id, id)).run().changes > 0;
+    return ((await db.delete(payments).where(eq(payments.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- attachments ----------------
   async getAttachments(entityType: string, entityId: number): Promise<Attachment[]> {
-    return db
+    return (await db
       .select()
       .from(attachments)
-      .where(eq(attachments.entityType, entityType as any))
-      .all()
+      .where(eq(attachments.entityType, entityType as any)))
       .filter((a) => a.entityId === entityId);
   }
   async createAttachment(data: InsertAttachment): Promise<Attachment> {
-    return db.insert(attachments).values({ ...data, uploadedAt: new Date().toISOString() }).returning().get();
+    return (await db.insert(attachments).values({ ...data, uploadedAt: new Date().toISOString() }).returning())[0];
   }
   async deleteAttachment(id: number): Promise<boolean> {
-    return db.delete(attachments).where(eq(attachments.id, id)).run().changes > 0;
+    return ((await db.delete(attachments).where(eq(attachments.id, id))).rowCount ?? 0) > 0;
   }
 
   // ---------------- app_settings (singleton) ----------------
   async getSettings(): Promise<AppSettings> {
-    const existing = db.select().from(appSettings).where(eq(appSettings.id, 1)).get();
+    const existing = (await db.select().from(appSettings).where(eq(appSettings.id, 1)))[0];
     if (existing) return existing;
-    return db.insert(appSettings).values({
+    return (await db.insert(appSettings).values({
       id: 1,
       businessName: "Mad River Cleaning Co.",
       businessAddress: "Thornton, NH",
@@ -508,11 +502,11 @@ export class DatabaseStorage implements IStorage {
       defaultPaymentTermsDays: 15,
       invoiceNumberPrefix: "INV",
       invoiceFooterNote: "Thank you for choosing Mad River Cleaning Co. Payment due within terms noted above.",
-    } as InsertAppSettings).returning().get();
+    } as InsertAppSettings).returning())[0];
   }
   async updateSettings(data: Partial<InsertAppSettings>): Promise<AppSettings> {
     const current = await this.getSettings();
-    return db.update(appSettings).set(data).where(eq(appSettings.id, current.id)).returning().get();
+    return (await db.update(appSettings).set(data).where(eq(appSettings.id, current.id)).returning())[0];
   }
 }
 
