@@ -42,7 +42,7 @@ export function pdfDisposition(filename: string, inline = false) {
 }
 
 export function renderInvoicePdf(opts: {
-  invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null; photos?: Buffer[];
+  invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null; photos?: { bytes: Buffer; note: string }[];
   /** Same layout, worded as a quote: the due date is its valid-until date. */
   quote?: boolean;
 }): Promise<Buffer> {
@@ -208,18 +208,29 @@ export function renderInvoicePdf(opts: {
   text(quote ? `This quote is valid until ${date(inv.dueDate)}.` : business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
   text(right, M + W - 190, y + 12, { size: 9, color: "#5b6774", width: 190, align: "right" });
 
-  // Attached photos on their own page after the invoice: one large, or a two-column grid.
+  // Attached photos on their own page: every photo in the same size frame, whatever its shape,
+  // so a mix of wide and tall shots still lines up. Notes sit underneath as captions.
   if (opts.photos?.length) {
-    const photos = opts.photos, pad = 14, top = M + 22;
-    const cw = photos.length === 1 ? W : (W - pad) / 2;
-    const ch = photos.length === 1 ? BOTTOM - top : (BOTTOM - top - 2 * pad) / 3;
+    const photos = opts.photos, pad = 14, top = M + 34, single = photos.length === 1;
+    const rows = Math.ceil(photos.length / 2), cw = single ? W : (W - pad) / 2;
+    // Room for the longest note, so no caption is cut off. The frames give up the space.
+    const noteH = Math.max(0, ...photos.map(p => (p.note ? measure(p.note, cw - 4, 9) + 12 : 0)));
+    const frameH = Math.min(cw * 0.75, (BOTTOM - top - (rows - 1) * pad) / rows - noteH);
     newPage();
-    text("PHOTOS", M, M, { size: 9, bold: true, color: GREEN, characterSpacing: 0.8 });
+    text("PHOTOS", M, M, { size: 11, bold: true, color: NAVY_DARK, characterSpacing: 0.8 });
+    text(`${kind} ${inv.invoiceNumber}`, M, M + 2, { size: 9, color: MUTED, width: W, align: "right" });
+    doc.moveTo(M, M + 20).lineTo(M + W, M + 20).lineWidth(1.6).stroke(GREEN);
     photos.forEach((photo, i) => {
-      const x = M + (i % 2) * (cw + pad), py = top + Math.floor(i / 2) * (ch + pad);
+      const x = M + (i % 2) * (cw + pad), py = top + Math.floor(i / 2) * (frameH + noteH + pad);
+      doc.save();
+      doc.roundedRect(x, py, cw, frameH, 6).clip();
+      doc.rect(x, py, cw, frameH).fill(PANEL);
       // One unreadable image must not cost the customer the whole PDF.
-      try { doc.image(photo, x, py, { fit: [cw, ch], align: "center", valign: photos.length === 1 ? undefined : "center" }); }
+      try { doc.image(photo.bytes, x, py, { fit: [cw, frameH], align: "center", valign: "center" }); }
       catch (err) { console.error(`Invoice ${inv.invoiceNumber}: couldn't place a photo in the PDF.`, err); }
+      doc.restore();
+      doc.roundedRect(x, py, cw, frameH, 6).lineWidth(0.8).stroke(LINE);
+      if (photo.note) text(photo.note, x + 2, py + frameH + 7, { size: 9, color: "#34404c", width: cw - 4 });
     });
   }
 

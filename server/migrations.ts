@@ -3,7 +3,7 @@ import { db } from "./db";
 import { BASELINE_SQL, BASELINE_VERSION } from "./pg-schema";
 
 /** Highest migration version below. Bump when adding a migration. */
-export const LATEST_MIGRATION = 13;
+export const LATEST_MIGRATION = 14;
 
 /**
  * Additive Postgres migrations. Versions 1–11 were the SQLite migrations; a new database
@@ -54,6 +54,7 @@ const MIGRATIONS: { version: number; sql: string }[] = [
     );
     CREATE INDEX quote_activity_quote ON quote_activity (quote_id);
   ` },
+  { version: 14, sql: `ALTER TABLE invoice_photos ADD COLUMN note text NOT NULL DEFAULT ''` },
 ];
 
 // Any number for the advisory lock, as long as it's always the same one.

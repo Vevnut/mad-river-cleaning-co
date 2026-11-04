@@ -82,13 +82,26 @@ try {
   await db.run("UPDATE invoices SET public_token=?, public_enabled=1 WHERE id=?", tokenA, a.id);
   await db.run("UPDATE invoices SET public_token=?, public_enabled=1 WHERE id=?", tokenB, b.id);
   const pub = JSON.parse((await call("GET", `/api/public/invoices/${tokenA}`)).text);
-  check("the customer's invoice lists the photo", pub.photos.length === 1 && pub.photos[0] === photo.id);
+  check("the customer's invoice lists the photo", pub.photos.length === 1 && pub.photos[0].id === photo.id);
   const seen = await call("GET", `/api/public/invoices/${tokenA}/photos/${photo.id}`);
   check("the customer can open the photo with no sign-in", seen.status === 200 && seen.bytes.equals(jpeg));
   check("another invoice's link can't open it", (await call("GET", `/api/public/invoices/${tokenB}/photos/${photo.id}`)).status === 404);
   check("a made-up link can't open it", (await call("GET", `/api/public/invoices/${"0".repeat(64)}/photos/${photo.id}`)).status === 404);
   const pdfPublic = await call("GET", `/api/public/invoices/${tokenA}/pdf`);
   check("the customer's PDF carries the photo", pdfPublic.status === 200 && pdfPublic.bytes.length > plainPdf);
+
+  // Notes.
+  const noted = await json("PATCH", `/api/invoice-photos/${photo.id}`, { note: "  Scratch by the <b>sink</b>  " });
+  check("a photo can have a note", noted.status === 200 && JSON.parse(noted.text).note === "Scratch by the <b>sink</b>");
+  check("notes need sign-in", (await call("PATCH", `/api/invoice-photos/${photo.id}`, JSON.stringify({ note: "x" }), { "Content-Type": "application/json" })).status === 401);
+  check("very long notes are refused", (await json("PATCH", `/api/invoice-photos/${photo.id}`, { note: "x".repeat(201) })).status >= 400);
+  check("the note is recorded in the invoice activity", JSON.parse((await json("GET", `/api/invoices/${a.id}/activity`)).text).some((h: any) => h.activityType === "photo_note_changed"));
+  const notedHtml = (await json("GET", `/api/invoices/${a.id}/print`)).text;
+  check("the printable invoice shows the note, safely", notedHtml.includes("<figcaption>Scratch by the &lt;b&gt;sink&lt;/b&gt;</figcaption>"));
+  check("the customer's link carries the note", JSON.parse((await call("GET", `/api/public/invoices/${tokenA}`)).text).photos[0].note === "Scratch by the <b>sink</b>");
+  check("the PDF still renders with a note", (await call("GET", `/api/public/invoices/${tokenA}/pdf`)).bytes.subarray(0, 4).toString() === "%PDF");
+  await json("PATCH", `/api/invoice-photos/${photo.id}`, { note: "" });
+  check("a note can be cleared", !(await json("GET", `/api/invoices/${a.id}/print`)).text.includes("<figcaption>"));
 
   // Limits.
   for (let i = 1; i < MAX_INVOICE_PHOTOS; i++) assert.equal((await upload(a.id, jpeg)).status, 201);
@@ -110,6 +123,7 @@ try {
   const cPhoto = JSON.parse((await upload(c.id, jpeg)).text);
   assert.equal((await json("POST", `/api/invoices/${c.id}/void`, {})).status, 200);
   check("a void invoice can't gain photos", (await upload(c.id, jpeg)).status === 409);
+  check("a void invoice's notes can't change", (await json("PATCH", `/api/invoice-photos/${cPhoto.id}`, { note: "x" })).status === 409);
   check("a void invoice can't lose photos", (await json("DELETE", `/api/invoice-photos/${cPhoto.id}`)).status === 409);
 
   // Deleting the invoice keeps a restorable copy.

@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ImagePlus, Loader2 } from "lucide-react";
 import { apiRequest, apiUrl, authHeaders, queryClient } from "@/lib/queryClient";
@@ -6,18 +6,34 @@ import { useToast } from "@/hooks/use-toast";
 import { toJpeg } from "@/lib/image";
 import { PhotoThumb } from "@/components/jobs/job-photos";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type Photo = { id: number; originalName: string };
+type Photo = { id: number; originalName: string; note: string };
 
 // Keep in step with MAX_INVOICE_PHOTOS in server/invoice-photos.ts.
 const MAX_PHOTOS = 6;
 // Smaller than job photos: these travel inside the PDF, which has a size limit.
 const MAX_EDGE = 1400;
+// Keep in step with MAX_INVOICE_PHOTO_NOTE in server/invoice-photos.ts.
+const MAX_NOTE = 200;
+
+/** Saves when the box loses focus, like the rest of the page's quick edits. */
+function PhotoNote({ photo, onSaved }: { photo: Photo; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [note, setNote] = useState(photo.note);
+  useEffect(() => setNote(photo.note), [photo.note]);
+  const save = async () => {
+    if (note.trim() === photo.note) return;
+    try { await apiRequest("PATCH", `/api/invoice-photos/${photo.id}`, { note }); onSaved(); }
+    catch (err) { toast({ title: "Couldn't save the note", description: (err as Error).message, variant: "destructive" }); }
+  };
+  return <Textarea value={note} rows={2} maxLength={MAX_NOTE} placeholder="Add a note" aria-label={`Note for ${photo.originalName}`} className="min-h-0 resize-none text-xs" onChange={e => setNote(e.target.value)} onBlur={save} data-testid={`input-invoice-photo-note-${photo.id}`} />;
+}
 
 export function InvoicePhotos({ invoiceId, readOnly }: { invoiceId: number; readOnly: boolean }) {
   const { toast } = useToast();
@@ -63,11 +79,11 @@ export function InvoicePhotos({ invoiceId, readOnly }: { invoiceId: number; read
   return <Card data-testid="card-invoice-photos">
     <CardHeader className="pb-3">
       <CardTitle className="text-base">Photos</CardTitle>
-      <p className="text-xs text-muted-foreground">The customer sees these on the invoice, the PDF and their invoice link.</p>
+      <p className="text-xs text-muted-foreground">The customer sees these and their notes on the invoice, the PDF and their invoice link.</p>
     </CardHeader>
     <CardContent className="space-y-3">
-      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-        {photos.map(p => <PhotoThumb key={p.id} photo={p} path={`/api/invoice-photos/${p.id}/file`} onOpen={setViewing} onDelete={readOnly ? undefined : () => setDeleting(p)} />)}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {photos.map(p => <div key={p.id} className="space-y-1.5"><PhotoThumb photo={p} path={`/api/invoice-photos/${p.id}/file`} onOpen={setViewing} onDelete={readOnly ? undefined : () => setDeleting(p)} />{readOnly ? p.note && <p className="text-xs text-muted-foreground">{p.note}</p> : <PhotoNote photo={p} onSaved={refresh} />}</div>)}
         {!readOnly && photos.length < MAX_PHOTOS && <button
           onClick={() => input.current?.click()}
           disabled={uploading > 0}

@@ -124,8 +124,8 @@ export function renderInvoicePrintHtml(opts: {
   business: PrintBusiness;
   /** Where the cleaning was done (name and address lines), when different from billing. */
   serviceProperty?: string | null;
-  /** Attached photos (JPEG), shown to the customer after the totals. */
-  photos?: Buffer[];
+  /** Attached photos (JPEG) with their notes, shown to the customer after the totals. */
+  photos?: { bytes: Buffer; note: string }[];
 }): string {
   const { invoice, customer, items, business } = opts;
   const balance = Math.round((invoice.total - invoice.amountPaid) * 100) / 100;
@@ -203,11 +203,13 @@ export function renderInvoicePrintHtml(opts: {
   .row.total { background: ${NAVY}; color: #fff; font-weight: 700; font-size: 16px; border-radius: 8px; margin-top: 6px; padding: 10px 12px; }
   .row.paid { color: ${GREEN}; }
   .row.balance { background: ${GREEN}; color: #fff; font-weight: 700; font-size: 15px; border-radius: 8px; margin-top: 6px; padding: 10px 12px; }
-  .photos { margin-top: 28px; }
-  .photos .label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: ${GREEN}; margin-bottom: 10px; }
-  .photos .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .photos { margin-top: 32px; }
+  .photos .label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: ${NAVY_DARK}; padding-bottom: 8px; margin-bottom: 14px; border-bottom: 2px solid ${GREEN}; }
+  .photos .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
   .photos.single .grid { grid-template-columns: minmax(0, 1fr); }
-  .photos img { display: block; width: 100%; max-height: 520px; object-fit: contain; border: 1px solid #dfe5ea; border-radius: 6px; background: #f6f8fa; break-inside: avoid; }
+  .photos figure { margin: 0; break-inside: avoid; }
+  .photos img { display: block; width: 100%; aspect-ratio: 4 / 3; object-fit: contain; border: 1px solid #dfe5ea; border-radius: 6px; background: #f6f8fa; }
+  .photos figcaption { margin-top: 6px; font-size: 12px; line-height: 1.4; color: #34404c; overflow-wrap: anywhere; }
   .footer { margin-top: 36px; padding-top: 16px; border-top: 2px solid ${GREEN}; display: flex; justify-content: space-between; gap: 16px; font-size: 11.5px; color: #5b6774; }
   .footer .thanks { color: ${NAVY_DARK}; font-weight: 600; }
   @media (max-width: 600px) {
@@ -290,7 +292,7 @@ export function renderInvoicePrintHtml(opts: {
       </div>
     </div>
 
-    ${opts.photos?.length ? `<div class="photos${opts.photos.length === 1 ? " single" : ""}"><div class="label">PHOTOS</div><div class="grid">${opts.photos.map((p, i) => `<img src="data:image/jpeg;base64,${p.toString("base64")}" alt="Photo ${i + 1}" />`).join("")}</div></div>` : ""}
+    ${opts.photos?.length ? `<div class="photos${opts.photos.length === 1 ? " single" : ""}"><div class="label">PHOTOS</div><div class="grid">${opts.photos.map((p, i) => `<figure><img src="data:image/jpeg;base64,${p.bytes.toString("base64")}" alt="${esc(p.note) || `Photo ${i + 1}`}" />${p.note ? `<figcaption>${esc(p.note)}</figcaption>` : ""}</figure>`).join("")}</div></div>` : ""}
 
     <div class="footer">
       <div class="thanks">${esc(business.invoiceFooterNote)}</div>

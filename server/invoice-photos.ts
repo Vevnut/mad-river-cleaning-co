@@ -1,5 +1,6 @@
 import type { Express, Response } from "express";
 import { randomBytes } from "node:crypto";
+import { z } from "zod";
 import { db } from "./db";
 import { isJpeg, IMAGE_HEADERS } from "./jpeg";
 import { saveFile, loadFile, deleteFile, SAFE_NAME } from "./files";
@@ -15,9 +16,11 @@ import { photoUpload } from "./job-photos";
  */
 export const MAX_INVOICE_PHOTOS = 6;
 export const MAX_INVOICE_PHOTO_BYTES = 3 * 1024 * 1024;
+// Short enough to sit under a photo on the PDF as a caption.
+export const MAX_INVOICE_PHOTO_NOTE = 200;
 
 function fail(status: number, message: string): never { throw Object.assign(new Error(message), { status }); }
-const row = (r: any) => r && ({ id: Number(r.id), invoiceId: Number(r.invoice_id), originalName: r.original_name, size: Number(r.size), createdAt: r.created_at, createdBy: r.created_by });
+const row = (r: any) => r && ({ id: Number(r.id), invoiceId: Number(r.invoice_id), originalName: r.original_name, note: r.note, size: Number(r.size), createdAt: r.created_at, createdBy: r.created_by });
 
 const findPhoto = (id: number) => (Number.isSafeInteger(id) ? db.get("SELECT * FROM invoice_photos WHERE id=?", id) : Promise.resolve(undefined));
 const findInvoice = async (id: number) => {
@@ -33,12 +36,12 @@ export async function listInvoicePhotos(invoiceId: number) {
   return (await db.all("SELECT * FROM invoice_photos WHERE invoice_id=? ORDER BY created_at, id", invoiceId)).map(row);
 }
 
-/** The photos' bytes, for embedding in the PDF and printable invoice. A missing file is left out. */
-export async function loadInvoicePhotos(invoiceId: number): Promise<Buffer[]> {
-  const list = await db.all("SELECT file_name FROM invoice_photos WHERE invoice_id=? ORDER BY created_at, id", invoiceId);
+/** The photos and their notes, for embedding in the PDF and printable invoice. A missing file is left out. */
+export async function loadInvoicePhotos(invoiceId: number): Promise<{ bytes: Buffer; note: string }[]> {
+  const list = await db.all("SELECT file_name, note FROM invoice_photos WHERE invoice_id=? ORDER BY created_at, id", invoiceId);
   const files = await Promise.all(list.map(p => loadFile("invoice-photos", p.file_name)));
   if (files.includes(null)) console.error(`Invoice ${invoiceId}: a photo file is missing from storage.`);
-  return files.filter((f): f is Buffer => !!f);
+  return list.flatMap((p, i) => (files[i] ? [{ bytes: files[i]!, note: p.note }] : []));
 }
 
 async function addInvoicePhoto(invoiceId: number, body: Buffer, name: unknown, actor: string) {
@@ -89,6 +92,18 @@ export function registerInvoicePhotos(app: Express) {
   });
 
   app.get("/api/invoice-photos/:id/file", async (req, res) => sendPhoto(res, await findPhoto(Number(req.params.id))));
+
+  app.patch("/api/invoice-photos/:id", async (req, res) => {
+    const photo = await findPhoto(Number(req.params.id));
+    if (!photo) return res.status(404).json({ message: "Photo not found" });
+    assertNotVoid(await findInvoice(Number(photo.invoice_id)));
+    const { note } = z.object({ note: z.string().trim().max(MAX_INVOICE_PHOTO_NOTE, `Keep photo notes under ${MAX_INVOICE_PHOTO_NOTE} characters.`) }).parse(req.body);
+    if (note !== photo.note) await db.tx(async () => {
+      await db.run("UPDATE invoice_photos SET note=? WHERE id=?", note, photo.id);
+      await logActivity(Number(photo.invoice_id), "photo_note_changed", photo.original_name, res.locals.user?.email || "Workspace user");
+    });
+    res.json(row(await findPhoto(photo.id)));
+  });
 
   app.delete("/api/invoice-photos/:id", async (req, res) => {
     const photo = await findPhoto(Number(req.params.id));

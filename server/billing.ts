@@ -341,7 +341,7 @@ export function registerPublicBilling(app: Express) {
     const business = await settings();
     const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : await one("customers", inv.customerId);
     res.json({ invoiceNumber, issueDate, dueDate, status, total, subtotal, amountPaid, balanceDue, notes, propertyAddress, discountAmount, travelFee, rushFee,
-      photos: (await listInvoicePhotos(inv.id)).map(p => p.id),
+      photos: (await listInvoicePhotos(inv.id)).map(({ id, note }) => ({ id, note })),
       customerName: customer.companyName || customer.name, businessName: business.businessName, businessEmail: business.businessEmail,
       businessPhone: business.businessPhone, footer: business.invoiceFooterNote, onlineEnabled: integrationStatus().stripe,
       items: (await rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id)).map(({ description, descriptionSnapshot, quantity, unitPrice, amount }) => ({ description, descriptionSnapshot, quantity, unitPrice, amount })) });
