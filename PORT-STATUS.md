@@ -22,16 +22,13 @@ Perplexity-hosted SQLite app (Settings → full backup zip) with a verified cuto
 ## Deployment
 - Vercel project `mad-river-cleaning-co`, team Bradleys Boat Care, Hobby plan, production branch `vercel-neon`.
 - Address: https://mad-river-cleaning-co.vercel.app
-- Database: new Neon `mad-river-db` (long-lab-11925291), connected as `DATABASE_URL`. Migrations have run; it is empty.
+- Database: new Neon `mad-river-db` (long-lab-11925291), connected as `DATABASE_URL`. Live data imported 2026-11-04 from the 05:01 UTC backup: 997 rows, 12,701 values compared against the backup with 0 differences.
 - Files: private Blob store `mad-river-cleaning-co-blob` (store_vN32GbyprSNdCdKZ, iad1), connected as `BLOB_READ_WRITE_TOKEN`.
 - Do not connect this project to `neon-pink-window`: that is the Parts Room live database.
 
 ## To do
 1. Owner enters secrets in Vercel: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `INVOICE_FROM_EMAIL`.
-2. Owner freezes the old app and downloads the full backup from Settings.
-3. Check the zip's `schemaVersion`: the importer needs 11. If it is 10, publish `master` on Computer first or extend the importer.
-4. Run `script/import-sqlite.ts <zip>` with `DATABASE_URL` and `BLOB_READ_WRITE_TOKEN` set, and read its verification report.
-5. Test sign-in on the live address.
-6. Cutover: Stripe webhook URL, re-add the Google Calendar link, send cleaners the new link, handle old invoice links.
-7. Upgrade to Vercel Pro before real business use (Hobby is non-commercial).
-8. Decide on merging to `master`. After that, Perplexity Computer can't publish it (no `DATABASE_URL`).
+2. Owner keeps the old app frozen until cutover, then tests sign-in on the live address. A later re-import needs a fresh backup and `--replace`, which erases anything entered on the new site.
+3. Cutover: Stripe webhook URL, re-add the Google Calendar link, send cleaners the new link, handle old invoice links.
+4. Upgrade to Vercel Pro before real business use (Hobby is non-commercial).
+5. Decide on merging to `master`. After that, Perplexity Computer can't publish it (no `DATABASE_URL`).
