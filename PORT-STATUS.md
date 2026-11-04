@@ -17,8 +17,21 @@ Perplexity-hosted SQLite app (Settings → full backup zip) with a verified cuto
 - `script/import-sqlite.ts` — verified end to end on PGlite (rows, FKs at commit, money totals, refuses without --replace).
 - Removed demo-cleanup.ts, data-import.ts.
 
+- `script/seed.ts` is async and refuses non-local targets. Tests run on PGlite (`tests/pg.ts`): 288 checks pass; `providers.test.ts` fails as it did before the port.
+
+## Deployment
+- Vercel project `mad-river-cleaning-co`, team Bradleys Boat Care, Hobby plan, production branch `vercel-neon`.
+- Address: https://mad-river-cleaning-co.vercel.app
+- Database: new Neon `mad-river-db` (long-lab-11925291), connected as `DATABASE_URL`. Migrations have run; it is empty.
+- Files: private Blob store `mad-river-cleaning-co-blob` (store_vN32GbyprSNdCdKZ, iad1), connected as `BLOB_READ_WRITE_TOKEN`.
+- Do not connect this project to `neon-pink-window`: that is the Parts Room live database.
+
 ## To do
-- Seed script (`script/seed.ts`) to async drizzle; refuse non-local targets.
-- Tests: `tests/pg.ts` harness (PGlite socket + migrate + seed); port each test's direct SQL to async;
-  drop upgrade-backup / data-import / full-backup tests (SQLite-only).
-- Deploy: Vercel project (Hobby for testing), Neon + Blob via Vercel Storage (owner does this), env vars (owner), import, verify, cutover.
+1. Owner enters secrets in Vercel: `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `RESEND_API_KEY`, `INVOICE_FROM_EMAIL`.
+2. Owner freezes the old app and downloads the full backup from Settings.
+3. Check the zip's `schemaVersion`: the importer needs 11. If it is 10, publish `master` on Computer first or extend the importer.
+4. Run `script/import-sqlite.ts <zip>` with `DATABASE_URL` and `BLOB_READ_WRITE_TOKEN` set, and read its verification report.
+5. Test sign-in on the live address.
+6. Cutover: Stripe webhook URL, re-add the Google Calendar link, send cleaners the new link, handle old invoice links.
+7. Upgrade to Vercel Pro before real business use (Hobby is non-commercial).
+8. Decide on merging to `master`. After that, Perplexity Computer can't publish it (no `DATABASE_URL`).
