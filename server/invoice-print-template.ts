@@ -124,6 +124,8 @@ export function renderInvoicePrintHtml(opts: {
   business: PrintBusiness;
   /** Where the cleaning was done (name and address lines), when different from billing. */
   serviceProperty?: string | null;
+  /** Attached photos (JPEG), shown to the customer after the totals. */
+  photos?: Buffer[];
 }): string {
   const { invoice, customer, items, business } = opts;
   const balance = Math.round((invoice.total - invoice.amountPaid) * 100) / 100;
@@ -201,6 +203,11 @@ export function renderInvoicePrintHtml(opts: {
   .row.total { background: ${NAVY}; color: #fff; font-weight: 700; font-size: 16px; border-radius: 8px; margin-top: 6px; padding: 10px 12px; }
   .row.paid { color: ${GREEN}; }
   .row.balance { background: ${GREEN}; color: #fff; font-weight: 700; font-size: 15px; border-radius: 8px; margin-top: 6px; padding: 10px 12px; }
+  .photos { margin-top: 28px; }
+  .photos .label { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: ${GREEN}; margin-bottom: 10px; }
+  .photos .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .photos.single .grid { grid-template-columns: minmax(0, 1fr); }
+  .photos img { display: block; width: 100%; max-height: 520px; object-fit: contain; border: 1px solid #dfe5ea; border-radius: 6px; background: #f6f8fa; break-inside: avoid; }
   .footer { margin-top: 36px; padding-top: 16px; border-top: 2px solid ${GREEN}; display: flex; justify-content: space-between; gap: 16px; font-size: 11.5px; color: #5b6774; }
   .footer .thanks { color: ${NAVY_DARK}; font-weight: 600; }
   @media (max-width: 600px) {
@@ -282,6 +289,8 @@ export function renderInvoicePrintHtml(opts: {
         ${balance > 0 && invoice.amountPaid > 0 ? `<div class="row balance"><span>Balance due</span><span>${fmt$(balance)}</span></div>` : ""}
       </div>
     </div>
+
+    ${opts.photos?.length ? `<div class="photos${opts.photos.length === 1 ? " single" : ""}"><div class="label">PHOTOS</div><div class="grid">${opts.photos.map((p, i) => `<img src="data:image/jpeg;base64,${p.toString("base64")}" alt="Photo ${i + 1}" />`).join("")}</div></div>` : ""}
 
     <div class="footer">
       <div class="thanks">${esc(business.invoiceFooterNote)}</div>

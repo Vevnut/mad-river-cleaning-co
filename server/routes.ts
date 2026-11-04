@@ -32,6 +32,7 @@ import { renderInvoicePrintHtml } from "./invoice-print-template";
 import { registerAuth, protect } from "./auth";
 import { registerBilling, registerPublicBilling } from "./billing";
 import { registerJobPhotos } from "./job-photos";
+import { registerInvoicePhotos } from "./invoice-photos";
 import { registerExpenses } from "./expenses";
 import { registerSubcontractors } from "./subcontractors";
 import { registerCalendar, registerPublicCalendar } from "./calendar";
@@ -50,6 +51,8 @@ export async function registerRoutes(
   registerPublicBilling(app);
   registerPublicCalendar(app);
   protect(app);
+  // Before billing: it ends with a catch-all for unknown invoice routes.
+  registerInvoicePhotos(app);
   registerBilling(app);
   registerJobPhotos(app);
   registerExpenses(app);

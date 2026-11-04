@@ -269,7 +269,7 @@ CREATE TABLE maintenance_log (version bigint PRIMARY KEY, result text NOT NULL, 
 export const TABLES = [
   "organization", "app_settings", "staff", "customers", "contacts", "subcontractors", "job_templates", "properties",
   "schedules", "jobs", "service_checklists", "stays", "notes", "attachments", "service_catalog", "property_services",
-  "invoices", "invoice_items", "payments", "invoice_activity", "invoice_sends", "checkout_sessions", "webhook_events",
+  "invoices", "invoice_items", "invoice_photos", "payments", "invoice_activity", "invoice_sends", "checkout_sessions", "webhook_events",
   "deleted_invoices", "expenses", "expense_receipts", "job_photos", "job_subcontractors", "subcontractor_payments",
   "calendar_feeds", "calendar_sources", "calendar_events", "auth_users", "auth_sessions", "auth_rate_limits", "maintenance_log",
 ] as const;

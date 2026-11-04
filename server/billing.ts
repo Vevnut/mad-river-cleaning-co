@@ -6,6 +6,7 @@ import { db } from "./db";
 import { organizationId } from "./auth";
 import { renderInvoicePrintHtml } from "./invoice-print-template";
 import { invoicePdfFilename, pdfDisposition, renderInvoicePdf } from "./invoice-pdf";
+import { listInvoicePhotos, loadInvoicePhotos, sendPublicInvoicePhoto } from "./invoice-photos";
 
 const now = () => new Date().toISOString();
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -239,7 +240,7 @@ async function publicInvoice(token: string) {
 async function printParts(inv: any) {
   const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : await one("customers", inv.customerId);
   return { invoice: inv, customer, items: await rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id),
-    business: await settings(), serviceProperty: inv.propertyAddress };
+    business: await settings(), serviceProperty: inv.propertyAddress, photos: await loadInvoicePhotos(inv.id) };
 }
 /** Sends the invoice as a named PDF download ("…- Invoice INV-2026-00165 - Customer.pdf"). */
 async function sendPdf(res: any, inv: any, inline: boolean) {
@@ -324,9 +325,14 @@ export function registerPublicBilling(app: Express) {
     const business = await settings();
     const customer = inv.customerSnapshot ? JSON.parse(inv.customerSnapshot) : await one("customers", inv.customerId);
     res.json({ invoiceNumber, issueDate, dueDate, status, total, subtotal, amountPaid, balanceDue, notes, propertyAddress, discountAmount, travelFee, rushFee,
+      photos: (await listInvoicePhotos(inv.id)).map(p => p.id),
       customerName: customer.companyName || customer.name, businessName: business.businessName, businessEmail: business.businessEmail,
       businessPhone: business.businessPhone, footer: business.invoiceFooterNote, onlineEnabled: integrationStatus().stripe,
       items: (await rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id)).map(({ description, descriptionSnapshot, quantity, unitPrice, amount }) => ({ description, descriptionSnapshot, quantity, unitPrice, amount })) });
+  });
+  app.get("/api/public/invoices/:token/photos/:photoId", async (req, res) => {
+    const inv = await publicInvoice(String(req.params.token));
+    await sendPublicInvoicePhoto(res, inv.id, Number(req.params.photoId));
   });
   app.get("/api/public/invoices/:token/print", async (req, res) => res.type("html").send(await printable(await publicInvoice(String(req.params.token)))));
   app.get("/api/public/invoices/:token/pdf", async (req, res) => sendPdf(res, await publicInvoice(String(req.params.token)), req.query.inline === "1"));
@@ -442,9 +448,10 @@ export function registerBilling(app: Express) {
     await db.tx(async () => {
       const snapshot = { invoice: (await rows("invoices", "id=?", inv.id))[0], items: await rows("invoice_items", "invoice_id=? ORDER BY sort_order,id", inv.id), payments: pays,
         activity: await rows("invoice_activity", "invoice_id=? ORDER BY id", inv.id), sends: await rows("invoice_sends", "invoice_id=?", inv.id),
-        checkouts: await rows("checkout_sessions", "invoice_id=?", inv.id) };
+        checkouts: await rows("checkout_sessions", "invoice_id=?", inv.id), photos: await rows("invoice_photos", "invoice_id=? ORDER BY id", inv.id) };
       await insert("deleted_invoices", { invoiceId: inv.id, invoiceNumber: inv.invoiceNumber, snapshot: JSON.stringify(snapshot), deletedBy: res.locals.user.email, deletedAt: now() });
-      for (const t of ["invoice_activity", "invoice_items", "payments", "invoice_sends", "checkout_sessions"]) await db.run(`DELETE FROM ${t} WHERE invoice_id=?`, inv.id);
+      // Photo files stay in storage: the saved copy above lists them, so a deleted invoice stays restorable.
+      for (const t of ["invoice_activity", "invoice_items", "invoice_photos", "payments", "invoice_sends", "checkout_sessions"]) await db.run(`DELETE FROM ${t} WHERE invoice_id=?`, inv.id);
       await db.run("DELETE FROM invoices WHERE id=?", inv.id);
       if (inv.jobId && !(await rows("invoices", "job_id=? AND status!='canceled'", inv.jobId)).length) await update("jobs", inv.jobId, { status: "completed" });
     });

@@ -12,6 +12,7 @@ import { Field, Choice, rateOptions } from "@/components/billing-fields";
 import { InvoicePreview } from "@/pages/public-invoice";
 import { formatMoney, businessDate } from "@/lib/format";
 import { DeleteInvoiceDialog, pendingDelete } from "@/components/invoices/delete-invoice-dialog";
+import { InvoicePhotos } from "@/components/invoices/invoice-photos";
 import { ArrowLeft, Send, Printer, Plus, Trash2 } from "lucide-react";
 
 const methods = [["cash", "Cash"], ["check", "Check"], ["venmo", "Venmo"], ["zelle", "Zelle"], ["bank_transfer", "Bank transfer"], ["manual_card", "Card processed manually"], ["other", "Other"]].map(([value, label]) => ({ value, label }));
@@ -69,6 +70,7 @@ export default function InvoiceDetailPage() {
       {inv.notes && <div className="bg-muted/40 p-3 rounded-md text-sm whitespace-pre-wrap"><p className="font-medium mb-1">Message to client</p>{inv.notes}</div>}
       {inv.internalNotes && <div className="border rounded-md p-3 text-sm whitespace-pre-wrap"><p className="font-medium mb-1">Internal notes · not shown to client</p>{inv.internalNotes}</div>}
     </CardContent></Card>
+    <InvoicePhotos invoiceId={inv.id} readOnly={inv.status === "canceled"} />
     <Card><CardHeader><CardTitle className="text-base">Payment history</CardTitle></CardHeader><CardContent className="space-y-3">
       {!payments.length && <p className="text-sm text-muted-foreground">No payments recorded. Cash, check, Venmo, Zelle and other methods are still welcome.</p>}
       {payments.map(p => <div key={p.id} className="border rounded-md p-3 text-sm"><div className="flex justify-between"><span className="capitalize">{p.method.replaceAll("_", " ")}</span><strong>{formatMoney(p.amount)}</strong></div><p className="text-xs text-muted-foreground">{p.paidDate} · {p.provider || "manual"} · {p.reference || p.providerTransactionId || "No reference"}</p>{p.note && <p className="text-xs mt-2">Internal: {p.note}</p>}</div>)}

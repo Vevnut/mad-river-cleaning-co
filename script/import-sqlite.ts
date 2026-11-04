@@ -19,8 +19,8 @@ import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { unzipSync } from "fflate";
 import { db, closePool } from "../server/db";
-import { migrate, LATEST_MIGRATION } from "../server/migrations";
-import { TABLES } from "../server/pg-schema";
+import { migrate } from "../server/migrations";
+import { BASELINE_VERSION, TABLES } from "../server/pg-schema";
 import { saveFile, loadFile, SAFE_NAME, type Bucket } from "../server/files";
 
 const sha256 = (b: Uint8Array) => createHash("sha256").update(b).digest("hex");
@@ -43,7 +43,7 @@ export async function importSqlite(sqlitePath: string, opts: { replace?: boolean
   try {
     const srcTables = new Set((src.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map(r => r.name));
     const srcVersion = Number((src.prepare("SELECT coalesce(max(version),0) v FROM schema_migrations").get() as any).v);
-    if (srcVersion !== LATEST_MIGRATION) throw new Error(`The SQLite database is at schema version ${srcVersion}; this app expects ${LATEST_MIGRATION}. Update one side first.`);
+    if (srcVersion !== BASELINE_VERSION) throw new Error(`The SQLite database is at schema version ${srcVersion}; this importer expects ${BASELINE_VERSION}, the last SQLite version.`);
     const unknown = Array.from(srcTables).filter(t => t !== "schema_migrations" && !t.startsWith("sqlite_") && !(TABLES as readonly string[]).includes(t) && !RETIRED.includes(t));
     if (unknown.length) throw new Error(`The SQLite database has tables this app doesn't know: ${unknown.join(", ")}. Nothing was copied.`);
     for (const t of RETIRED) if (srcTables.has(t)) log(`Leaving out ${t}: old-host bookkeeping, not business data.`);

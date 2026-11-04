@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, apiUrl } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { formatMoney } from "@/lib/format";
@@ -31,6 +31,7 @@ export default function PublicInvoicePage() {
         <div className="border-t pt-4 space-y-2 text-sm">{[["Subtotal", inv.subtotal], ["Discount", -inv.discountAmount], ["Travel fee", inv.travelFee], ["Rush fee", inv.rushFee], ["Total", inv.total], ["Payments received", inv.amountPaid]].map(([label, value]) => <div key={label} className="flex justify-between"><span>{label}</span><span>{formatMoney(Number(value))}</span></div>)}
           <div className="flex justify-between text-xl font-semibold pt-3"><span>Balance due</span><span>{formatMoney(inv.balanceDue)}</span></div></div>
         {inv.notes && <p className="text-sm whitespace-pre-wrap bg-muted/40 rounded-md p-3">{inv.notes}</p>}
+        {inv.photos?.length > 0 && <div className="space-y-2"><p className="text-xs uppercase tracking-wide text-muted-foreground">Photos</p><div className={inv.photos.length === 1 ? "grid gap-2" : "grid grid-cols-2 gap-2"}>{inv.photos.map((id: number, n: number) => <a key={id} href={apiUrl(`/api/public/invoices/${token}/photos/${id}`)} target="_blank" rel="noopener noreferrer"><img src={apiUrl(`/api/public/invoices/${token}/photos/${id}`)} alt={`Invoice photo ${n + 1}`} className="w-full rounded-md border object-contain" /></a>)}</div></div>}
         {inv.balanceDue > 0 && inv.status !== "canceled" && <div className="space-y-3">
           <Button className="w-full" disabled={!inv.onlineEnabled || busy || inv.status === "draft"} onClick={async () => {
             setBusy(true); setError("");

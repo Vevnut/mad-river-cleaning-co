@@ -3,19 +3,21 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from "
 import { join, resolve } from "node:path";
 
 /**
- * Where job photos and expense receipts are kept.
+ * Where job photos, invoice photos and expense receipts are kept.
  *  - On Vercel (BLOB_READ_WRITE_TOKEN set): a *private* Vercel Blob store, so files are
  *    never reachable by URL; the app streams them after its own permission checks.
  *  - Locally and in tests: folders on disk (PHOTO_DIR / RECEIPT_DIR), as before.
  * Names are always server-generated random hex, never user input.
  */
-export type Bucket = "job-photos" | "expense-receipts";
+export type Bucket = "job-photos" | "expense-receipts" | "invoice-photos";
 export const SAFE_NAME = /^[a-f0-9]{16,64}\.[a-z0-9]{2,5}$/;
 
 const useBlob = () => Boolean(process.env.BLOB_READ_WRITE_TOKEN);
-const folder = (bucket: Bucket) => resolve(bucket === "job-photos"
-  ? process.env.PHOTO_DIR || "uploads/job-photos"
-  : process.env.RECEIPT_DIR || "uploads/expense-receipts");
+const folder = (bucket: Bucket) => resolve({
+  "job-photos": process.env.PHOTO_DIR || "uploads/job-photos",
+  "expense-receipts": process.env.RECEIPT_DIR || "uploads/expense-receipts",
+  "invoice-photos": process.env.INVOICE_PHOTO_DIR || "uploads/invoice-photos",
+}[bucket]);
 function checked(name: string) {
   if (!SAFE_NAME.test(name)) throw new Error("Unsafe file name");
   return name;

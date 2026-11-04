@@ -41,7 +41,7 @@ export function pdfDisposition(filename: string, inline = false) {
 }
 
 export function renderInvoicePdf(opts: {
-  invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null;
+  invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null; photos?: Buffer[];
 }): Promise<Buffer> {
   const { invoice: inv, customer, items, business } = opts;
   const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true, bufferPages: true,
@@ -201,6 +201,21 @@ export function renderInvoicePdf(opts: {
   const right = [business.businessName, business.businessPhone].filter(Boolean).join(" · ");
   text(business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
   text(right, M + W - 190, y + 12, { size: 9, color: "#5b6774", width: 190, align: "right" });
+
+  // Attached photos on their own page after the invoice: one large, or a two-column grid.
+  if (opts.photos?.length) {
+    const photos = opts.photos, pad = 14, top = M + 22;
+    const cw = photos.length === 1 ? W : (W - pad) / 2;
+    const ch = photos.length === 1 ? BOTTOM - top : (BOTTOM - top - 2 * pad) / 3;
+    newPage();
+    text("PHOTOS", M, M, { size: 9, bold: true, color: GREEN, characterSpacing: 0.8 });
+    photos.forEach((photo, i) => {
+      const x = M + (i % 2) * (cw + pad), py = top + Math.floor(i / 2) * (ch + pad);
+      // One unreadable image must not cost the customer the whole PDF.
+      try { doc.image(photo, x, py, { fit: [cw, ch], align: "center", valign: photos.length === 1 ? undefined : "center" }); }
+      catch (err) { console.error(`Invoice ${inv.invoiceNumber}: couldn't place a photo in the PDF.`, err); }
+    });
+  }
 
   // Page numbers when an invoice runs past one page.
   const range = doc.bufferedPageRange();

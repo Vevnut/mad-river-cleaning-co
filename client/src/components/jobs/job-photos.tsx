@@ -18,22 +18,22 @@ type Section = "damage" | "final_walkthrough";
 export type Photo = { id: number; jobId: number; section: Section; originalName: string; size: number; createdAt: string; createdBy?: string; mine?: boolean };
 
 /** Photos are private, so they're fetched with the sign-in header rather than a public URL. */
-function usePhotoUrl(id: number, apiBase: string) {
+function usePhotoUrl(path: string) {
   const [src, setSrc] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     let revoked = false, objectUrl = "";
-    fetch(apiUrl(`${apiBase}/job-photos/${id}/file`), { headers: authHeaders() as HeadersInit })
+    fetch(apiUrl(path), { headers: authHeaders() as HeadersInit })
       .then(r => (r.ok ? r.blob() : Promise.reject()))
       .then(b => { if (!revoked) { objectUrl = URL.createObjectURL(b); setSrc(objectUrl); } })
       .catch(() => !revoked && setFailed(true));
     return () => { revoked = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
-  }, [id, apiBase]);
+  }, [path]);
   return { src, failed };
 }
 
-function Thumb({ photo, apiBase, onOpen, onDelete }: { photo: Photo; apiBase: string; onOpen: (src: string) => void; onDelete?: () => void }) {
-  const { src, failed } = usePhotoUrl(photo.id, apiBase);
+export function PhotoThumb({ photo, path, onOpen, onDelete }: { photo: { id: number; originalName: string }; path: string; onOpen: (src: string) => void; onDelete?: () => void }) {
+  const { src, failed } = usePhotoUrl(path);
   return (
     <div className="group relative aspect-square overflow-hidden rounded-md border bg-muted">
       {src ? (
@@ -111,7 +111,7 @@ function PhotoSection({ jobId, section, title, description, icon, photos, childr
       <CardContent className="space-y-3">
         {children}
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {photos.map(p => <Thumb key={p.id} photo={p} apiBase={apiBase} onOpen={setViewing} onDelete={!readOnly && canDelete(p) ? () => setDeleting(p) : undefined} />)}
+          {photos.map(p => <PhotoThumb key={p.id} photo={p} path={`${apiBase}/job-photos/${p.id}/file`} onOpen={setViewing} onDelete={!readOnly && canDelete(p) ? () => setDeleting(p) : undefined} />)}
           {!readOnly && <button
             onClick={() => input.current?.click()}
             disabled={uploading > 0}
