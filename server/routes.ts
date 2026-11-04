@@ -33,6 +33,7 @@ import { registerAuth, protect } from "./auth";
 import { registerBilling, registerPublicBilling } from "./billing";
 import { registerJobPhotos } from "./job-photos";
 import { registerInvoicePhotos } from "./invoice-photos";
+import { registerPublicQuotes, registerQuotes } from "./quotes";
 import { registerExpenses } from "./expenses";
 import { registerSubcontractors } from "./subcontractors";
 import { registerCalendar, registerPublicCalendar } from "./calendar";
@@ -49,8 +50,10 @@ export async function registerRoutes(
 ): Promise<Server> {
   registerAuth(app);
   registerPublicBilling(app);
+  registerPublicQuotes(app);
   registerPublicCalendar(app);
   protect(app);
+  registerQuotes(app);
   // Before billing: it ends with a catch-all for unknown invoice routes.
   registerInvoicePhotos(app);
   registerBilling(app);

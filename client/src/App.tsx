@@ -24,6 +24,9 @@ import JobDetailPage from "@/pages/job-detail";
 import InvoicesListPage from "@/pages/invoices-list";
 import InvoiceDetailPage from "@/pages/invoice-detail";
 import InvoiceNewPage from "@/pages/invoice-new";
+import QuotesListPage from "@/pages/quotes-list";
+import QuoteDetailPage from "@/pages/quote-detail";
+import QuoteNewPage from "@/pages/quote-new";
 import ReportsPage from "@/pages/reports";
 import ExpensesPage from "@/pages/expenses";
 import SubcontractorsPage from "@/pages/subcontractors";
@@ -32,6 +35,7 @@ import SettingsPage from "@/pages/settings";
 import { AuthGate } from "@/components/auth-gate";
 import { CleanerShell } from "@/components/cleaner-shell";
 import PublicInvoicePage from "@/pages/public-invoice";
+import PublicQuotePage from "@/pages/public-quote";
 
 function AppRouter({
   onNewCustomer,
@@ -57,6 +61,10 @@ function AppRouter({
       <Route path="/invoices/:id/edit" component={InvoiceNewPage} />
       <Route path="/invoices/:id" component={InvoiceDetailPage} />
       <Route path="/invoices" component={InvoicesListPage} />
+      <Route path="/quotes/new" component={QuoteNewPage} />
+      <Route path="/quotes/:id/edit" component={QuoteNewPage} />
+      <Route path="/quotes/:id" component={QuoteDetailPage} />
+      <Route path="/quotes" component={QuotesListPage} />
       <Route path="/expenses" component={ExpensesPage} />
       <Route path="/subcontractors" component={SubcontractorsPage} />
       <Route path="/subcontractors/:id" component={SubcontractorDetailPage} />
@@ -83,6 +91,7 @@ function App() {
           <Router hook={useHashLocation}>
             <Switch>
               <Route path="/pay/:token" component={PublicInvoicePage} />
+              <Route path="/quote/:token" component={PublicQuotePage} />
               <Route><AuthGate>{session => session.role === "cleaner" ? <CleanerShell email={session.email} /> : <>
             <SidebarProvider style={style as React.CSSProperties}>
               <div className="flex h-screen w-full overflow-hidden">

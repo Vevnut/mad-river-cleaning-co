@@ -7,7 +7,8 @@ import {
 
 export type JobStatus = "scheduled" | "in_progress" | "completed" | "invoiced" | "canceled";
 export type InvoiceStatus = "draft" | "sent" | "viewed" | "paid" | "partial" | "overdue" | "canceled";
-export type AnyStatus = JobStatus | InvoiceStatus;
+export type QuoteStatus = "draft" | "sent" | "accepted" | "declined" | "expired" | "canceled";
+export type AnyStatus = JobStatus | InvoiceStatus | QuoteStatus;
 
 const STATUS_CONFIG: Record<
   AnyStatus,
@@ -23,6 +24,9 @@ const STATUS_CONFIG: Record<
   paid: { label: "Paid", icon: CircleDollarSign, text: "text-status-paid", bg: "bg-status-paid-bg" },
   partial: { label: "Partially paid", icon: AlertTriangle, text: "text-status-partial", bg: "bg-status-partial-bg" },
   overdue: { label: "Overdue", icon: CircleAlert, text: "text-status-overdue", bg: "bg-status-overdue-bg" },
+  accepted: { label: "Accepted", icon: CheckCircle2, text: "text-status-paid", bg: "bg-status-paid-bg" },
+  declined: { label: "Declined", icon: Ban, text: "text-muted-foreground", bg: "bg-muted" },
+  expired: { label: "Expired", icon: CircleAlert, text: "text-status-overdue", bg: "bg-status-overdue-bg" },
   canceled: { label: "Canceled", icon: Ban, text: "text-status-canceled", bg: "bg-status-canceled-bg" },
 };
 

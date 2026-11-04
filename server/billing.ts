@@ -114,6 +114,44 @@ async function nextInvoiceNumber() {
   while (await db.get("SELECT 1 FROM invoices WHERE invoice_number=@number UNION ALL SELECT 1 FROM deleted_invoices WHERE invoice_number=@number", { number: number() })) n++;
   return number();
 }
+/** Validates charges for an invoice or quote and prices them. Subtotal is in cents. */
+export async function checkedLines(items: any[], rateType: string, propertyId: number | null) {
+  let baseCount = 0;
+  const sources = new Set<number>();
+  const lines: any[] = [];
+  for (let sortOrder = 0; sortOrder < items.length; sortOrder++) {
+    const item = itemSchema.parse(items[sortOrder]);
+    if (["standard_rate", "owner_rate"].includes(item.lineItemType)) {
+      baseCount++;
+      if (item.lineItemType !== (rateType === "owner" ? "owner_rate" : rateType === "standard" ? "standard_rate" : "manual"))
+        fail(400, "The base charge must match the selected rate.");
+    }
+    if (item.sourcePropertyServiceId) {
+      if (sources.has(item.sourcePropertyServiceId)) fail(400, "A property service was added twice.");
+      sources.add(item.sourcePropertyServiceId);
+      const s = await one("property_services", item.sourcePropertyServiceId);
+      if (s.propertyId !== propertyId) fail(400, "Service does not belong to this property.");
+    }
+    lines.push({ ...item, amount: dollars(cents(item.quantity * item.unitPrice)), sortOrder });
+  }
+  if (baseCount > 1) fail(400, "Choose one base rate, not both owner and standard.");
+  for (const source of Array.from(sources)) {
+    const s = await one("property_services", source);
+    if (sources.has(s.excludesPropertyServiceId)) fail(400, `${s.customName} replaces another selected service. Remove the conflicting service.`);
+  }
+  return { lines, subtotal: lines.reduce((n, l) => n + cents(l.amount), 0) };
+}
+/**
+ * A job made from a quote can already have its invoice, created from that quote. Returning it
+ * stops a finished job from billing the customer a second time.
+ */
+async function invoiceFromQuote(jobId: number) {
+  const q = (await rows("quotes", "job_id=? AND invoice_id IS NOT NULL", jobId))[0];
+  const inv = q && (await rows("invoices", "id=? AND status!='canceled'", q.invoiceId))[0];
+  if (!inv) return null;
+  await db.run("UPDATE jobs SET status='invoiced' WHERE id=? AND status='completed'", jobId);
+  return invoice(inv.id);
+}
 export function saveInvoice(input: any, id?: number, actor?: string) {
   return db.tx(async () => {
     const d = invoiceSchema.parse(input);
@@ -130,35 +168,13 @@ export function saveInvoice(input: any, id?: number, actor?: string) {
       const job = await one("jobs", d.jobId);
       const existing = (await rows("invoices", "job_id=? AND status!='canceled'", job.id)).find(i => i.id !== id);
       if (existing) { if (!id) return invoice(existing.id); fail(409, "This job already has an invoice."); }
+      if (!id) { const quoted = await invoiceFromQuote(job.id); if (quoted) return quoted; }
       if (!["completed", "invoiced"].includes(job.status)) fail(400, "Complete the job before invoicing it.");
       if (job.propertyId !== d.propertyId || job.customerId !== d.customerId) fail(400, "Job, property, and owner must match.");
     }
     const items = d.items ?? (p ? (await defaults(p.id, d.rateType)).items : []);
     if (!items.length) fail(400, "Add at least one line item.");
-    let baseCount = 0;
-    const sources = new Set<number>();
-    const lines: any[] = [];
-    for (let sortOrder = 0; sortOrder < items.length; sortOrder++) {
-      const item = itemSchema.parse(items[sortOrder]);
-      if (["standard_rate", "owner_rate"].includes(item.lineItemType)) {
-        baseCount++;
-        if (item.lineItemType !== (d.rateType === "owner" ? "owner_rate" : d.rateType === "standard" ? "standard_rate" : "manual"))
-          fail(400, "The base charge must match the selected rate.");
-      }
-      if (item.sourcePropertyServiceId) {
-        if (sources.has(item.sourcePropertyServiceId)) fail(400, "A property service was added twice.");
-        sources.add(item.sourcePropertyServiceId);
-        const s = await one("property_services", item.sourcePropertyServiceId);
-        if (s.propertyId !== d.propertyId) fail(400, "Service does not belong to this property.");
-      }
-      lines.push({ ...item, amount: dollars(cents(item.quantity * item.unitPrice)), sortOrder });
-    }
-    if (baseCount > 1) fail(400, "Choose one base rate, not both owner and standard.");
-    for (const source of Array.from(sources)) {
-      const s = await one("property_services", source);
-      if (sources.has(s.excludesPropertyServiceId)) fail(400, `${s.customName} replaces another selected service. Remove the conflicting service.`);
-    }
-    const subtotal = lines.reduce((n, l) => n + cents(l.amount), 0);
+    const { lines, subtotal } = await checkedLines(items, d.rateType, d.propertyId);
     const total = subtotal - cents(d.discountAmount) + cents(d.travelFee) + cents(d.rushFee);
     if (total < 0 || total > 1000000000) fail(400, "Invoice total is invalid.");
     if (old && total < cents(old.amountPaid)) fail(400, "Total cannot be less than payments already received.");
@@ -415,6 +431,8 @@ export function registerBilling(app: Express) {
     const j = await one("jobs", Number(req.params.id));
     const existing = (await rows("invoices", "job_id=? AND status!='canceled'", j.id))[0];
     if (existing) return res.json(await invoice(existing.id));
+    const quoted = await invoiceFromQuote(j.id);
+    if (quoted) return res.json(quoted);
     const d = await defaults(j.propertyId, j.rateType);
     const base = d.items.find((i: any) => i.lineItemType.endsWith("_rate"));
     if (base) base.unitPrice = j.price;

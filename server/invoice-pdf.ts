@@ -23,15 +23,16 @@ const STATUS: Record<string, [string, string, string]> = { // label, background,
   paid: ["PAID IN FULL", "#d9efe0", "#1d5a35"], partial: ["PARTIALLY PAID", "#fbefd6", "#80540a"],
   overdue: ["OVERDUE", "#fbe1e5", "#a3122f"], canceled: ["VOID", "#e6e8eb", "#555555"],
   draft: ["DRAFT", "#3a5574", "#ffffff"], sent: ["SENT", "#3a5574", "#ffffff"], viewed: ["SENT", "#3a5574", "#ffffff"],
+  accepted: ["ACCEPTED", "#d9efe0", "#1d5a35"], declined: ["DECLINED", "#e6e8eb", "#555555"], expired: ["EXPIRED", "#e6e8eb", "#555555"],
 };
 
 /** "Mad River Cleaning Co. - Invoice INV-2026-00165 - North Peak Stays.pdf", safe on every OS. */
-export function invoicePdfFilename(inv: PrintInvoice, customer: PrintCustomer, business: PrintBusiness) {
+export function invoicePdfFilename(inv: PrintInvoice, customer: PrintCustomer, business: PrintBusiness, kind = "Invoice") {
   const clean = (s: string | null | undefined) => String(s ?? "").replace(/[\u0000-\u001f\u007f/\\:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim();
   const who = clean(customer.companyName) || clean(customer.name);
-  const name = [clean(business.businessName), `Invoice ${clean(inv.invoiceNumber)}`, who].filter(Boolean).join(" - ");
+  const name = [clean(business.businessName), `${kind} ${clean(inv.invoiceNumber)}`, who].filter(Boolean).join(" - ");
   const short = Array.from(name.toWellFormed?.() ?? name).slice(0, 150).join("").trim();
-  return `${short || "Invoice"}.pdf`;
+  return `${short || kind}.pdf`;
 }
 
 /** Content-Disposition with a plain-ASCII fallback plus the exact UTF-8 name. */
@@ -42,16 +43,19 @@ export function pdfDisposition(filename: string, inline = false) {
 
 export function renderInvoicePdf(opts: {
   invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null; photos?: Buffer[];
+  /** Same layout, worded as a quote: the due date is its valid-until date. */
+  quote?: boolean;
 }): Promise<Buffer> {
-  const { invoice: inv, customer, items, business } = opts;
+  const { invoice: inv, customer, items, business, quote = false } = opts;
+  const kind = quote ? "Quote" : "Invoice";
   const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true, bufferPages: true,
-    info: { Title: `Invoice ${inv.invoiceNumber}`, Author: business.businessName, Subject: `Invoice ${inv.invoiceNumber} for ${customer.companyName || customer.name}` } });
+    info: { Title: `${kind} ${inv.invoiceNumber}`, Author: business.businessName, Subject: `${kind} ${inv.invoiceNumber} for ${customer.companyName || customer.name}` } });
   const chunks: Buffer[] = [];
   doc.on("data", c => chunks.push(c));
   const done = new Promise<Buffer>((ok, bad) => { doc.on("end", () => ok(Buffer.concat(chunks))); doc.on("error", bad); });
 
   const balance = Math.round((inv.total - inv.amountPaid) * 100) / 100;
-  const settled = inv.status === "paid" || (balance <= 0 && inv.total > 0);
+  const settled = !quote && (inv.status === "paid" || (balance <= 0 && inv.total > 0));
   const text = (s: string, x: number, y: number, o: PDFKit.Mixins.TextOptions & { size?: number; bold?: boolean; color?: string } = {}) => {
     const { size = 10, bold = false, color = INK, ...rest } = o;
     doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(size).fillColor(color).text(s, x, y, { lineBreak: rest.width ? true : false, ...rest });
@@ -84,7 +88,7 @@ export function renderInvoicePdf(opts: {
   const contact = [business.businessPhone, business.businessEmail].filter(Boolean).join("   ·   ");
   if (contact) text(contact, nameX, hy, { size: 9.5, color: "#dfe7ef", width: nameW, height: 13, ellipsis: true });
   const rx = PAGE_W - M - rightW;
-  text("INVOICE", rx, 30, { size: 9.5, bold: true, color: "#c9d6e3", width: rightW, align: "right", characterSpacing: 3 });
+  text(quote ? "QUOTE" : "INVOICE", rx, 30, { size: 9.5, bold: true, color: "#c9d6e3", width: rightW, align: "right", characterSpacing: 3 });
   text(inv.invoiceNumber, rx, 44, { size: 17, bold: true, color: "#ffffff", width: rightW, align: "right" });
   const [label, pillBg, pillInk] = STATUS[inv.status] ?? [String(inv.status).toUpperCase(), "#3a5574", "#ffffff"];
   doc.font("Helvetica-Bold").fontSize(8.5);
@@ -95,8 +99,10 @@ export function renderInvoicePdf(opts: {
   // Issued / Due / Terms / Amount due.
   let y = bandH + 5 + 24;
   const metaH = 50, cols = [1, 1, 1, 1.3], unit = W / cols.reduce((a, b) => a + b, 0);
-  const cells: [string, string][] = [["ISSUED", date(inv.issueDate)], ["DUE", date(inv.dueDate)], ["TERMS", terms(inv.issueDate, inv.dueDate)],
-    [settled ? "PAID IN FULL" : "AMOUNT DUE", money(Math.max(balance, 0))]];
+  const cells: [string, string][] = quote
+    ? [["QUOTED", date(inv.issueDate)], ["VALID UNTIL", date(inv.dueDate)], ["STATUS", label.charAt(0) + label.slice(1).toLowerCase()], ["QUOTE TOTAL", money(inv.total)]]
+    : [["ISSUED", date(inv.issueDate)], ["DUE", date(inv.dueDate)], ["TERMS", terms(inv.issueDate, inv.dueDate)],
+      [settled ? "PAID IN FULL" : "AMOUNT DUE", money(Math.max(balance, 0))]];
   let cx = M;
   cells.forEach(([k, v], i) => {
     const cw = cols[i] * unit, last = i === cells.length - 1;
@@ -126,7 +132,7 @@ export function renderInvoicePdf(opts: {
     let ly = y + 27 + measure(title, innerW, 11, true) + 3;
     for (const l of lines) { text(l, x + 16, ly, { size: 9.5, width: innerW }); ly += measure(l, innerW, 9.5) + 1.5; }
   };
-  party(M, GREEN, "BILL TO", billTo, billLines);
+  party(M, GREEN, quote ? "PREPARED FOR" : "BILL TO", billTo, billLines);
   if (svc.length) party(M + partyW + 14, NAVY, "SERVICE PROPERTY", svc[0], svc.slice(1));
   y += ph + 20;
 
@@ -199,7 +205,7 @@ export function renderInvoicePdf(opts: {
   if (y + 40 > PAGE_H - 20) newPage();
   doc.moveTo(M, y).lineTo(M + W, y).lineWidth(1.6).stroke(GREEN);
   const right = [business.businessName, business.businessPhone].filter(Boolean).join(" · ");
-  text(business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
+  text(quote ? `This quote is valid until ${date(inv.dueDate)}.` : business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
   text(right, M + W - 190, y + 12, { size: 9, color: "#5b6774", width: 190, align: "right" });
 
   // Attached photos on their own page after the invoice: one large, or a two-column grid.
