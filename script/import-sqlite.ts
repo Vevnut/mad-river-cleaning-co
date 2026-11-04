@@ -30,7 +30,10 @@ const MONEY: [string, string, string][] = [
   ["expenses", "amount", "expensesTotal"], ["subcontractor_payments", "amount", ""], ["job_subcontractors", "pay", ""],
 ];
 
-export type ImportReport = { tables: Record<string, number>; files: number; problems: string[] };
+// data_imports only recorded the old host's one-time preview-to-live move; nothing reads it now.
+const RETIRED = ["data_imports"];
+
+export type ImportReport ={ tables: Record<string, number>; files: number; problems: string[] };
 
 /** Copies the SQLite database at `sqlitePath` into the Postgres at DATABASE_URL. */
 export async function importSqlite(sqlitePath: string, opts: { replace?: boolean; fileSource?: (folder: Bucket, name: string) => Buffer | null; manifest?: any; log?: (s: string) => void } = {}): Promise<ImportReport> {
@@ -41,8 +44,9 @@ export async function importSqlite(sqlitePath: string, opts: { replace?: boolean
     const srcTables = new Set((src.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as any[]).map(r => r.name));
     const srcVersion = Number((src.prepare("SELECT coalesce(max(version),0) v FROM schema_migrations").get() as any).v);
     if (srcVersion !== LATEST_MIGRATION) throw new Error(`The SQLite database is at schema version ${srcVersion}; this app expects ${LATEST_MIGRATION}. Update one side first.`);
-    const unknown = Array.from(srcTables).filter(t => t !== "schema_migrations" && !t.startsWith("sqlite_") && !(TABLES as readonly string[]).includes(t));
+    const unknown = Array.from(srcTables).filter(t => t !== "schema_migrations" && !t.startsWith("sqlite_") && !(TABLES as readonly string[]).includes(t) && !RETIRED.includes(t));
     if (unknown.length) throw new Error(`The SQLite database has tables this app doesn't know: ${unknown.join(", ")}. Nothing was copied.`);
+    for (const t of RETIRED) if (srcTables.has(t)) log(`Leaving out ${t}: old-host bookkeeping, not business data.`);
 
     await migrate();
     const busy = [];
