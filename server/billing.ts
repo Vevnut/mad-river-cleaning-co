@@ -141,17 +141,6 @@ export async function checkedLines(items: any[], rateType: string, propertyId: n
   }
   return { lines, subtotal: lines.reduce((n, l) => n + cents(l.amount), 0) };
 }
-/**
- * A job made from a quote can already have its invoice, created from that quote. Returning it
- * stops a finished job from billing the customer a second time.
- */
-async function invoiceFromQuote(jobId: number) {
-  const q = (await rows("quotes", "job_id=? AND invoice_id IS NOT NULL", jobId))[0];
-  const inv = q && (await rows("invoices", "id=? AND status!='canceled'", q.invoiceId))[0];
-  if (!inv) return null;
-  await db.run("UPDATE jobs SET status='invoiced' WHERE id=? AND status='completed'", jobId);
-  return invoice(inv.id);
-}
 export function saveInvoice(input: any, id?: number, actor?: string) {
   return db.tx(async () => {
     const d = invoiceSchema.parse(input);
@@ -168,7 +157,6 @@ export function saveInvoice(input: any, id?: number, actor?: string) {
       const job = await one("jobs", d.jobId);
       const existing = (await rows("invoices", "job_id=? AND status!='canceled'", job.id)).find(i => i.id !== id);
       if (existing) { if (!id) return invoice(existing.id); fail(409, "This job already has an invoice."); }
-      if (!id) { const quoted = await invoiceFromQuote(job.id); if (quoted) return quoted; }
       if (!["completed", "invoiced"].includes(job.status)) fail(400, "Complete the job before invoicing it.");
       if (job.propertyId !== d.propertyId || job.customerId !== d.customerId) fail(400, "Job, property, and owner must match.");
     }
@@ -431,8 +419,6 @@ export function registerBilling(app: Express) {
     const j = await one("jobs", Number(req.params.id));
     const existing = (await rows("invoices", "job_id=? AND status!='canceled'", j.id))[0];
     if (existing) return res.json(await invoice(existing.id));
-    const quoted = await invoiceFromQuote(j.id);
-    if (quoted) return res.json(quoted);
     const d = await defaults(j.propertyId, j.rateType);
     const base = d.items.find((i: any) => i.lineItemType.endsWith("_rate"));
     if (base) base.unitPrice = j.price;

@@ -8,7 +8,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InvoicePdfButtons } from "@/components/invoice-pdf-buttons";
-import { formatDate, formatMoney } from "@/lib/format";
+import { QuoteSections } from "@/components/quote-sections";
+import { formatDate } from "@/lib/format";
 
 const LABEL: Record<string, string> = { sent: "Awaiting your answer", accepted: "Accepted", declined: "Declined", expired: "Expired", canceled: "Canceled", draft: "Draft" };
 
@@ -26,20 +27,17 @@ export default function PublicQuotePage() {
     try { await apiRequest("POST", `/api/public/quotes/${token}/respond`, { decision: mode, name, note }); setMode(""); }
     catch (err: any) { setError(err.message); } finally { setBusy(false); refetch(); }
   };
-  const lines: [string, number][] = ([["Subtotal", q.subtotal], ["Discount", -q.discountAmount], ["Travel fee", q.travelFee], ["Rush fee", q.rushFee]] as [string, number][]).filter(([label, value]) => label === "Subtotal" || Number(value) !== 0);
   return <main className="h-[100dvh] overflow-y-auto bg-muted/30 py-6 px-4" data-testid="public-quote-scroll"><div className="max-w-2xl mx-auto space-y-5">
     <div><p className="text-sm text-muted-foreground">Quote from</p><h1 className="text-2xl font-semibold">{q.businessName}</h1></div>
     <Card><CardHeader className="space-y-3"><div className="flex justify-between gap-4 flex-wrap"><CardTitle>{q.quoteNumber}</CardTitle><span className="text-sm" data-testid="text-public-quote-status">{LABEL[q.status] ?? q.status}</span></div><p className="text-sm text-muted-foreground">Quoted {formatDate(q.issueDate)} · Valid until {formatDate(q.validUntil)}</p></CardHeader>
-      <CardContent className="space-y-5"><div><p className="text-xs uppercase tracking-wide text-muted-foreground">Prepared for</p><p className="font-medium">{q.customerName}</p>{q.propertyAddress && <p className="text-sm whitespace-pre-line text-muted-foreground mt-2">{q.propertyAddress}</p>}</div>
-        <div className="divide-y">{q.items.map((i: any, n: number) => <div key={n} className="flex justify-between gap-4 py-3"><div><p className="text-sm font-medium">{i.description}</p>{i.descriptionSnapshot && <p className="text-xs text-muted-foreground">{i.descriptionSnapshot}</p>}<p className="text-xs text-muted-foreground">{i.quantity} × {formatMoney(i.unitPrice)}</p></div><span className="text-sm tabular-nums">{formatMoney(i.amount)}</span></div>)}</div>
-        <div className="border-t pt-4 space-y-2 text-sm">{lines.map(([label, value]) => <div key={label} className="flex justify-between"><span>{label}</span><span>{formatMoney(value)}</span></div>)}
-          <div className="flex justify-between text-xl font-semibold pt-3"><span>Total</span><span data-testid="text-public-quote-total">{formatMoney(q.total)}</span></div></div>
+      <CardContent className="space-y-5"><div><p className="text-xs uppercase tracking-wide text-muted-foreground">Prepared for</p><p className="font-medium">{q.customerName}</p>{q.attention && <p className="text-sm text-muted-foreground">Attention: {q.attention}</p>}{q.propertyAddress && <p className="text-sm whitespace-pre-line text-muted-foreground mt-2">{q.propertyAddress}</p>}</div>
+        <QuoteSections houseSpecs={q.houseSpecs} sections={q.sections} />
         {q.notes && <p className="text-sm whitespace-pre-wrap bg-muted/40 rounded-md p-3">{q.notes}</p>}
 
         {q.status === "sent" && !mode && <div className="space-y-2"><div className="grid sm:grid-cols-2 gap-2"><Button onClick={() => { setError(""); setMode("accept"); }} data-testid="button-accept-quote">Accept quote</Button><Button variant="outline" onClick={() => { setError(""); setMode("decline"); }} data-testid="button-decline-quote">Decline</Button></div><p className="text-xs text-muted-foreground">No payment is taken here.</p></div>}
         {mode && <form className="space-y-3 rounded-md border p-4" onSubmit={respond}>
           {mode === "accept" ? <>
-            <p className="text-sm font-medium">Accept this quote for {formatMoney(q.total)}?</p>
+            <p className="text-sm font-medium">Accept this quote and the rates above?</p>
             <div className="space-y-2"><Label htmlFor="quote-name">Your name</Label><Input id="quote-name" required maxLength={120} autoComplete="name" value={name} onChange={e => setName(e.target.value)} data-testid="input-quote-name" /></div>
             <p className="text-xs text-muted-foreground">{q.businessName} will contact you to arrange the work. No payment is taken here.</p>
           </> : <>

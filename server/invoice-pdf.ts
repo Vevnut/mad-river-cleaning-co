@@ -41,12 +41,14 @@ export function pdfDisposition(filename: string, inline = false) {
   return `${inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename.toWellFormed?.() ?? filename).replace(/['()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase())}`;
 }
 
+export type QuoteSection = { title: string; price: string; lines: { label: string; text: string; price: string }[] };
+
 export function renderInvoicePdf(opts: {
   invoice: PrintInvoice; customer: PrintCustomer; items: PrintItem[]; business: PrintBusiness; serviceProperty?: string | null; photos?: { bytes: Buffer; note: string }[];
-  /** Same layout, worded as a quote: the due date is its valid-until date. */
-  quote?: boolean;
+  /** A rate sheet in place of line items and totals: its due date is the valid-until date. */
+  quote?: { sections: QuoteSection[]; houseSpecs?: string; attention?: string };
 }): Promise<Buffer> {
-  const { invoice: inv, customer, items, business, quote = false } = opts;
+  const { invoice: inv, customer, items, business, quote } = opts;
   const kind = quote ? "Quote" : "Invoice";
   const doc = new PDFDocument({ size: "LETTER", margin: 0, autoFirstPage: true, bufferPages: true,
     info: { Title: `${kind} ${inv.invoiceNumber}`, Author: business.businessName, Subject: `${kind} ${inv.invoiceNumber} for ${customer.companyName || customer.name}` } });
@@ -98,9 +100,9 @@ export function renderInvoicePdf(opts: {
 
   // Issued / Due / Terms / Amount due.
   let y = bandH + 5 + 24;
-  const metaH = 50, cols = [1, 1, 1, 1.3], unit = W / cols.reduce((a, b) => a + b, 0);
+  const metaH = 50, cols = quote ? [1, 1, 1.3] : [1, 1, 1, 1.3], unit = W / cols.reduce((a, b) => a + b, 0);
   const cells: [string, string][] = quote
-    ? [["QUOTED", date(inv.issueDate)], ["VALID UNTIL", date(inv.dueDate)], ["STATUS", label.charAt(0) + label.slice(1).toLowerCase()], ["QUOTE TOTAL", money(inv.total)]]
+    ? [["QUOTED", date(inv.issueDate)], ["VALID UNTIL", date(inv.dueDate)], ["STATUS", label.charAt(0) + label.slice(1).toLowerCase()]]
     : [["ISSUED", date(inv.issueDate)], ["DUE", date(inv.dueDate)], ["TERMS", terms(inv.issueDate, inv.dueDate)],
       [settled ? "PAID IN FULL" : "AMOUNT DUE", money(Math.max(balance, 0))]];
   let cx = M;
@@ -119,7 +121,7 @@ export function renderInvoicePdf(opts: {
   const billTo = customer.companyName?.trim() || customer.name;
   const contactName = customer.companyName && customer.name.trim().toLowerCase() !== customer.companyName.trim().toLowerCase() ? customer.name : "";
   const cityLine = [customer.billingCity, [customer.billingState, customer.billingZip].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-  const billLines = [contactName, customer.billingAddressLine1, customer.billingAddressLine2, cityLine, customer.phone, customer.email].filter(Boolean) as string[];
+  const billLines = [quote?.attention ? `Attention: ${quote.attention}` : "", contactName, customer.billingAddressLine1, customer.billingAddressLine2, cityLine, customer.phone, customer.email].filter(Boolean) as string[];
   const svc = (opts.serviceProperty || "").split("\n").map(s => s.trim()).filter(Boolean);
   const partyW = svc.length ? (W - 14) / 2 : W, innerW = partyW - 30;
   const partyHeight = (title: string, lines: string[]) => 30 + measure(title, innerW, 11, true) + lines.reduce((h, l) => h + measure(l, innerW, 9.5) + 1.5, 0) + 12;
@@ -136,76 +138,125 @@ export function renderInvoicePdf(opts: {
   if (svc.length) party(M + partyW + 14, NAVY, "SERVICE PROPERTY", svc[0], svc.slice(1));
   y += ph + 20;
 
-  // Line items, continuing on new pages with the header repeated.
-  const cw4 = [W - 230, 50, 85, 95], descW = cw4[0] - 24;
-  const header = () => {
-    doc.roundedRect(M, y, W, 24, 6).fill(NAVY);
-    doc.rect(M, y + 12, W, 12).fill(NAVY);
-    let x = M;
-    ["DESCRIPTION", "QTY", "RATE", "AMOUNT"].forEach((h, i) => {
-      text(h, x + 12, y + 8.5, { size: 7.5, bold: true, color: "#ffffff", width: cw4[i] - 24, align: i ? "right" : "left", characterSpacing: 0.6 });
-      x += cw4[i];
-    });
-    y += 24;
-  };
   const newPage = () => { doc.addPage({ size: "LETTER", margin: 0 }); y = M; };
-  header();
-  if (!items.length) { text("No line items.", M + 12, y + 10, { size: 9.5, color: MUTED }); y += 32; }
-  items.forEach((it, i) => {
-    const sub = it.descriptionSnapshot || "";
-    const rowH = 20 + measure(it.description, descW, 10, true) + (sub ? measure(sub, descW, 8.5) + 2 : 0);
-    if (y + rowH > BOTTOM) { newPage(); header(); }
-    if (i % 2 === 1) doc.rect(M, y, W, rowH).fill("#f8fafb");
-    text(it.description, M + 12, y + 10, { size: 10, bold: true, color: NAVY_DARK, width: descW });
-    if (sub) text(sub, M + 12, y + 12 + measure(it.description, descW, 10, true), { size: 8.5, color: "#6b7785", width: descW });
-    let x = M + cw4[0];
-    [String(it.quantity), money(it.unitPrice), money(it.amount)].forEach((v, j) => {
-      text(v, x + 12, y + 10, { size: 10, bold: j === 2, width: cw4[j + 1] - 24, align: "right" });
-      x += cw4[j + 1];
+  if (quote) {
+    // House specs, then the rate sheet: services on the left, prices on the right, no total.
+    const amountW = 100, descW = W - amountW - 24, bodyW = descW - 12;
+    if (quote.houseSpecs) {
+      const specsH = 32 + measure(quote.houseSpecs, W - 28, 9.5);
+      doc.roundedRect(M, y, W, specsH, 6).fill(GREEN_TINT);
+      text("HOUSE SPECS", M + 14, y + 11, { size: 7.5, bold: true, color: GREEN, characterSpacing: 0.8 });
+      text(quote.houseSpecs, M + 14, y + 24, { size: 9.5, color: "#34404c", width: W - 28 });
+      y += specsH + 16;
+    }
+    const tableHeader = () => {
+      doc.roundedRect(M, y, W, 24, 6).fill(NAVY);
+      text("DESCRIPTION", M + 12, y + 8.5, { size: 7.5, bold: true, color: "#ffffff", characterSpacing: 0.6 });
+      text("AMOUNT", M + W - amountW, y + 8.5, { size: 7.5, bold: true, color: "#ffffff", width: amountW - 12, align: "right", characterSpacing: 0.6 });
+      y += 34;
+    };
+    const fit = (h: number) => { if (y + h > BOTTOM) { newPage(); tableHeader(); } };
+    tableHeader();
+    quote.sections.forEach((s, i) => {
+      const titleH = measure(s.title, descW, 10.5, true);
+      fit(titleH + 28); // a heading never sits alone at the bottom of a page
+      text(s.title, M + 12, y, { size: 10.5, bold: true, color: NAVY_DARK, width: descW });
+      if (s.price) text(s.price, M + W - amountW, y, { size: 10.5, bold: true, color: GREEN, width: amountW - 12, align: "right" });
+      y += titleH + 6;
+      for (const l of s.lines) {
+        const body = [l.label, l.text].filter(Boolean).join(" ");
+        const h = measure(body, bodyW, 9.5, !!l.label);
+        fit(h + 5);
+        doc.circle(M + 15, y + 4.5, 1.4).fill(GREEN);
+        if (l.label) doc.font("Helvetica-Bold").fontSize(9.5).fillColor(NAVY_DARK).text(l.text ? `${l.label} ` : l.label, M + 24, y, { width: bodyW, continued: !!l.text });
+        if (l.text) doc.font("Helvetica").fontSize(9.5).fillColor(INK).text(l.text, l.label ? undefined : M + 24, l.label ? undefined : y, { width: bodyW, continued: false });
+        if (l.price) text(l.price, M + W - amountW, y, { size: 9.5, bold: true, width: amountW - 12, align: "right" });
+        y += h + 5;
+      }
+      y += 6;
+      if (i < quote.sections.length - 1) { doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.6).stroke("#e6ebef"); y += 12; }
     });
-    y += rowH;
-    doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.6).stroke("#e6ebef");
-  });
-  y += 18;
+    const notes = (inv.notes || "").trim();
+    if (notes) {
+      const notesH = 34 + measure(notes, W - 28, 9.5);
+      if (y + 12 + notesH > BOTTOM) newPage(); else y += 12;
+      doc.roundedRect(M, y, W, notesH, 6).fill(GREEN_TINT);
+      text("NOTES", M + 14, y + 11, { size: 7.5, bold: true, color: GREEN, characterSpacing: 0.8 });
+      text(notes, M + 14, y + 24, { size: 9.5, color: "#34404c", width: W - 28 });
+      y += notesH;
+    }
+    y += 26;
+  } else {
+    // Line items, continuing on new pages with the header repeated.
+    const cw4 = [W - 230, 50, 85, 95], descW = cw4[0] - 24;
+    const header = () => {
+      doc.roundedRect(M, y, W, 24, 6).fill(NAVY);
+      doc.rect(M, y + 12, W, 12).fill(NAVY);
+      let x = M;
+      ["DESCRIPTION", "QTY", "RATE", "AMOUNT"].forEach((h, i) => {
+        text(h, x + 12, y + 8.5, { size: 7.5, bold: true, color: "#ffffff", width: cw4[i] - 24, align: i ? "right" : "left", characterSpacing: 0.6 });
+        x += cw4[i];
+      });
+      y += 24;
+    };
+    header();
+    if (!items.length) { text("No line items.", M + 12, y + 10, { size: 9.5, color: MUTED }); y += 32; }
+    items.forEach((it, i) => {
+      const sub = it.descriptionSnapshot || "";
+      const rowH = 20 + measure(it.description, descW, 10, true) + (sub ? measure(sub, descW, 8.5) + 2 : 0);
+      if (y + rowH > BOTTOM) { newPage(); header(); }
+      if (i % 2 === 1) doc.rect(M, y, W, rowH).fill("#f8fafb");
+      text(it.description, M + 12, y + 10, { size: 10, bold: true, color: NAVY_DARK, width: descW });
+      if (sub) text(sub, M + 12, y + 12 + measure(it.description, descW, 10, true), { size: 8.5, color: "#6b7785", width: descW });
+      let x = M + cw4[0];
+      [String(it.quantity), money(it.unitPrice), money(it.amount)].forEach((v, j) => {
+        text(v, x + 12, y + 10, { size: 10, bold: j === 2, width: cw4[j + 1] - 24, align: "right" });
+        x += cw4[j + 1];
+      });
+      y += rowH;
+      doc.moveTo(M, y).lineTo(M + W, y).lineWidth(0.6).stroke("#e6ebef");
+    });
+    y += 18;
 
-  // Notes and totals.
-  const totW = 220, tx = M + W - totW;
-  const rows: { k: string; v: string; kind?: "total" | "paid" | "balance" }[] = [{ k: "Subtotal", v: money(inv.subtotal) }];
-  if (inv.discountAmount > 0) rows.push({ k: "Discount", v: `-${money(inv.discountAmount)}` });
-  if (inv.travelFee > 0) rows.push({ k: "Travel fee", v: money(inv.travelFee) });
-  if (inv.rushFee > 0) rows.push({ k: "Rush fee", v: money(inv.rushFee) });
-  if (inv.taxAmount > 0) rows.push({ k: "Tax", v: money(inv.taxAmount) });
-  rows.push({ k: "Total", v: money(inv.total), kind: "total" });
-  if (inv.amountPaid > 0) rows.push({ k: "Paid", v: `-${money(inv.amountPaid)}`, kind: "paid" });
-  if (balance > 0 && inv.amountPaid > 0) rows.push({ k: "Balance due", v: money(balance), kind: "balance" });
-  const rowH = (r: typeof rows[number]) => (r.kind === "total" || r.kind === "balance" ? 32 : 20);
-  const totalsH = rows.reduce((h, r) => h + rowH(r), 0);
-  const notesW = W - totW - 24, notes = (inv.notes || "").trim();
-  const notesH = notes ? 30 + measure(notes, notesW - 28, 9.5) : 0;
-  if (y + Math.max(totalsH, Math.min(notesH, 200)) > BOTTOM) newPage();
-  const top = y;
-  if (notes) {
-    doc.roundedRect(M, top, notesW, notesH, 6).fill(GREEN_TINT);
-    text("NOTES", M + 14, top + 11, { size: 7.5, bold: true, color: GREEN, characterSpacing: 0.8 });
-    text(notes, M + 14, top + 24, { size: 9.5, color: "#34404c", width: notesW - 28 });
+    // Notes and totals.
+    const totW = 220, tx = M + W - totW;
+    const rows: { k: string; v: string; kind?: "total" | "paid" | "balance" }[] = [{ k: "Subtotal", v: money(inv.subtotal) }];
+    if (inv.discountAmount > 0) rows.push({ k: "Discount", v: `-${money(inv.discountAmount)}` });
+    if (inv.travelFee > 0) rows.push({ k: "Travel fee", v: money(inv.travelFee) });
+    if (inv.rushFee > 0) rows.push({ k: "Rush fee", v: money(inv.rushFee) });
+    if (inv.taxAmount > 0) rows.push({ k: "Tax", v: money(inv.taxAmount) });
+    rows.push({ k: "Total", v: money(inv.total), kind: "total" });
+    if (inv.amountPaid > 0) rows.push({ k: "Paid", v: `-${money(inv.amountPaid)}`, kind: "paid" });
+    if (balance > 0 && inv.amountPaid > 0) rows.push({ k: "Balance due", v: money(balance), kind: "balance" });
+    const rowH = (r: typeof rows[number]) => (r.kind === "total" || r.kind === "balance" ? 32 : 20);
+    const totalsH = rows.reduce((h, r) => h + rowH(r), 0);
+    const notesW = W - totW - 24, notes = (inv.notes || "").trim();
+    const notesH = notes ? 30 + measure(notes, notesW - 28, 9.5) : 0;
+    if (y + Math.max(totalsH, Math.min(notesH, 200)) > BOTTOM) newPage();
+    const top = y;
+    if (notes) {
+      doc.roundedRect(M, top, notesW, notesH, 6).fill(GREEN_TINT);
+      text("NOTES", M + 14, top + 11, { size: 7.5, bold: true, color: GREEN, characterSpacing: 0.8 });
+      text(notes, M + 14, top + 24, { size: 9.5, color: "#34404c", width: notesW - 28 });
+    }
+    let ty = top;
+    for (const r of rows) {
+      const h = rowH(r), big = r.kind === "total" || r.kind === "balance";
+      if (big) doc.roundedRect(tx, ty + 3, totW, h - 4, 6).fill(r.kind === "total" ? NAVY : GREEN);
+      const color = big ? "#ffffff" : r.kind === "paid" ? GREEN : INK, size = r.kind === "total" ? 13 : big ? 12 : 10;
+      const ly = ty + (big ? (h - size) / 2 + 1 : 4);
+      text(r.k, tx + 12, ly, { size, bold: big, color });
+      text(r.v, tx + 12, ly, { size, bold: big, color, width: totW - 24, align: "right" });
+      ty += h;
+    }
+    y = Math.max(ty, top + notesH) + 26;
   }
-  let ty = top;
-  for (const r of rows) {
-    const h = rowH(r), big = r.kind === "total" || r.kind === "balance";
-    if (big) doc.roundedRect(tx, ty + 3, totW, h - 4, 6).fill(r.kind === "total" ? NAVY : GREEN);
-    const color = big ? "#ffffff" : r.kind === "paid" ? GREEN : INK, size = r.kind === "total" ? 13 : big ? 12 : 10;
-    const ly = ty + (big ? (h - size) / 2 + 1 : 4);
-    text(r.k, tx + 12, ly, { size, bold: big, color });
-    text(r.v, tx + 12, ly, { size, bold: big, color, width: totW - 24, align: "right" });
-    ty += h;
-  }
-  y = Math.max(ty, top + notesH) + 26;
 
   // Footer.
   if (y + 40 > PAGE_H - 20) newPage();
   doc.moveTo(M, y).lineTo(M + W, y).lineWidth(1.6).stroke(GREEN);
   const right = [business.businessName, business.businessPhone].filter(Boolean).join(" · ");
-  text(quote ? `This quote is valid until ${date(inv.dueDate)}.` : business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
+  text(quote ? `Thank you for your business. This quote is valid until ${date(inv.dueDate)}.` : business.invoiceFooterNote || "", M, y + 12, { size: 9, bold: true, color: NAVY_DARK, width: W - 200 });
   text(right, M + W - 190, y + 12, { size: 9, color: "#5b6774", width: 190, align: "right" });
 
   // Attached photos on their own page: every photo in the same size frame, whatever its shape,

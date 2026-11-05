@@ -9,9 +9,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge, type AnyStatus } from "@/components/status-badge";
-import { formatDate, formatMoney } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 
-type QuoteRow = { id: number; quoteNumber: string; issueDate: string; validUntil: string; total: number; status: AnyStatus; customerName: string; isProspect: boolean };
+type QuoteRow = { id: number; quoteNumber: string; issueDate: string; validUntil: string; status: AnyStatus; customerName: string; isProspect: boolean; propertyAddress: string };
 const STATUSES: [string, string][] = [["draft", "Draft"], ["sent", "Sent"], ["accepted", "Accepted"], ["declined", "Declined"], ["expired", "Expired"], ["canceled", "Canceled"]];
 
 export default function QuotesListPage() {
@@ -25,7 +25,7 @@ export default function QuotesListPage() {
 
   return <div className="p-4 md:p-6 space-y-4">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-xl font-semibold">Quotes</h1><p className="text-sm text-muted-foreground">Price up work for new and existing customers.</p></div>
+      <div><h1 className="text-xl font-semibold">Quotes</h1><p className="text-sm text-muted-foreground">Rate sheets for new and existing customers.</p></div>
       <Link href="/quotes/new"><Button data-testid="button-new-quote"><Plus className="h-4 w-4 mr-2" />New Quote</Button></Link>
     </div>
     <div className="flex flex-wrap gap-2">
@@ -35,15 +35,15 @@ export default function QuotesListPage() {
     {isLoading ? <Skeleton className="h-40 w-full" /> : !filtered.length ? <div className="rounded-md border border-dashed p-10 text-center space-y-2">
       <FileSignature className="h-6 w-6 mx-auto text-muted-foreground" />
       <p className="text-sm font-medium">{quotes.length ? "No quotes match." : "No quotes yet."}</p>
-      {!quotes.length && <p className="text-sm text-muted-foreground">Create one to send a customer a price they can accept online.</p>}
+      {!quotes.length && <p className="text-sm text-muted-foreground">Create one to send a customer rates they can accept online.</p>}
     </div> : <div className="rounded-md border overflow-x-auto"><Table>
-      <TableHeader><TableRow><TableHead>Quote</TableHead><TableHead>Customer</TableHead><TableHead>Date</TableHead><TableHead>Valid until</TableHead><TableHead className="text-right">Total</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+      <TableHeader><TableRow><TableHead>Quote</TableHead><TableHead>Customer</TableHead><TableHead>Property</TableHead><TableHead>Date</TableHead><TableHead>Valid until</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
       <TableBody>{filtered.map(q => <TableRow key={q.id} className="cursor-pointer" onClick={() => navigate(`/quotes/${q.id}`)} data-testid={`row-quote-${q.id}`}>
         <TableCell className="font-medium whitespace-nowrap">{q.quoteNumber}</TableCell>
         <TableCell><span className="mr-2">{q.customerName}</span>{q.isProspect && <Badge variant="outline">New</Badge>}</TableCell>
+        <TableCell className="max-w-[220px] truncate">{(q.propertyAddress || "").split("\n")[0]}</TableCell>
         <TableCell className="whitespace-nowrap">{formatDate(q.issueDate)}</TableCell>
         <TableCell className="whitespace-nowrap">{formatDate(q.validUntil)}</TableCell>
-        <TableCell className="text-right tabular-nums">{formatMoney(q.total)}</TableCell>
         <TableCell><StatusBadge status={q.status} /></TableCell>
       </TableRow>)}</TableBody>
     </Table></div>}

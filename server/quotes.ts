@@ -2,18 +2,23 @@ import type { Express, Response } from "express";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "./db";
-import { camel, checkedLines, saveInvoice } from "./billing";
+import { camel, saveInvoice } from "./billing";
 import { invoicePdfFilename, pdfDisposition, renderInvoicePdf } from "./invoice-pdf";
 
 /**
- * Quotes: priced offers sent before any work is agreed. Written to an existing customer, or to
- * a prospect whose details live on the quote until the quote becomes an invoice or a job.
+ * Quotes are rate sheets: sections of services with a price beside each one and no total. A
+ * customer accepts the rates, and one accepted quote then covers ongoing work, so it can make
+ * any number of invoices and jobs from whichever services were actually done. Written to an
+ * existing customer, or to a prospect whose details live on the quote until the first invoice
+ * or job is made.
  *
  *   draft -> sent -> accepted | declined        (a sent quote past valid_until reads as "expired")
  *
- * A customer can only ever accept the price they can see: editing a sent quote takes it back to
- * draft and turns the link off until it's sent again. Accepted quotes never change.
- * Owner routes are registered after the sign-in gate; registerPublicQuotes before it.
+ * A customer can only ever accept what they can see: editing a sent quote takes it back to draft
+ * and turns the link off until it's sent again. Accepted quotes never change.
+ * Prices are text, because a rate can be "$25/30 mins". Template wording lives in the database,
+ * not in this public repository. Owner routes are registered after the sign-in gate;
+ * registerPublicQuotes before it.
  */
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 const now = () => new Date().toISOString();
@@ -23,31 +28,39 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 const cents = (v: number) => Math.round((v + Number.EPSILON) * 100);
-const dollars = (v: number) => v / 100;
 function fail(status: number, message: string): never { throw Object.assign(new Error(message), { status }); }
 
-const money = z.number().finite().min(0).max(10000000);
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(s => !isNaN(Date.parse(s)) && new Date(s).toISOString().slice(0, 10) === s, "Invalid date");
 const text = (max: number) => z.string().trim().max(max).default("");
+const lineSchema = z.object({ label: text(120), text: text(2000), price: text(40) });
+const sectionSchema = z.object({ title: z.string().trim().min(1, "Give every section a heading.").max(200), price: text(40), lines: z.array(lineSchema).max(100).default([]) });
+const sectionsSchema = z.array(sectionSchema).max(30).default([]);
 const quoteSchema = z.object({
   customerId: z.number().int().positive().nullable().default(null), propertyId: z.number().int().positive().nullable().default(null),
   prospectName: text(200), prospectCompany: text(200), prospectEmail: z.union([z.literal(""), z.string().trim().email().max(200)]).default(""), prospectPhone: text(60),
   prospectAddressLine1: text(200), prospectAddressLine2: text(200), prospectCity: text(100), prospectState: text(40), prospectZip: text(20),
-  rateType: z.enum(["standard", "owner", "custom"]).default("custom"), issueDate: date, validUntil: date,
+  attention: text(200), houseSpecs: text(1000), issueDate: date, validUntil: date,
   notes: z.string().max(10000).nullable().default(""), internalNotes: z.string().max(10000).nullable().default(""),
-  discountAmount: money.default(0), travelFee: money.default(0), rushFee: money.default(0),
-  items: z.array(z.any()).max(200).default([]), requestKey: z.string().uuid().optional(),
+  sections: sectionsSchema, requestKey: z.string().uuid().optional(),
 });
-const scheduleSchema = z.object({
-  scheduledDate: date, scheduledTime: z.string().regex(/^\d{2}:\d{2}$/), durationMinutes: z.number().int().min(15).max(1440),
+const billLines = z.array(z.object({ description: z.string().trim().min(1).max(500), quantity: z.number().finite().positive().max(100000), unitPrice: z.number().finite().min(0).max(10000000) }))
+  .min(1, "Tick at least one service.").max(100);
+const invoiceSchema = z.object({ lines: billLines, requestKey: z.string().uuid().optional() });
+const jobSchema = z.object({
+  lines: billLines, scheduledDate: date, scheduledTime: z.string().regex(/^\d{2}:\d{2}$/), durationMinutes: z.number().int().min(15).max(1440),
   jobType: z.enum(["turnover", "deep_clean", "inspection", "one_time", "custom", "recurring"]).default("one_time"),
   propertyId: z.number().int().positive().nullable().default(null),
 });
+const templateSchema = z.object({ name: z.string().trim().min(1, "Name the template.").max(100), sections: sectionsSchema });
 const publicAnswer = z.object({ decision: z.enum(["accept", "decline"]), name: z.string().trim().max(120).default(""), note: z.string().trim().max(1000).default("") });
 
 const rows = async (table: string, where = "1=1", ...args: any[]): Promise<any[]> => (await db.all(`SELECT * FROM ${table} WHERE ${where}`, ...args)).map(camel);
 const customerOf = async (id: number | null) => (id ? (await rows("customers", "id=?", id))[0] ?? null : null);
+const businessOf = async () => (await rows("app_settings", "1=1 ORDER BY id LIMIT 1"))[0];
 const shownStatus = (q: any) => (q.status === "sent" && q.validUntil < today() ? "expired" : q.status);
+const sectionsOf = (q: any) => JSON.parse(q.sections || "[]");
+/** Blank rows left in the editor don't reach the customer. */
+const tidy = (sections: z.infer<typeof sectionsSchema>) => sections.map(s => ({ ...s, lines: s.lines.filter(l => l.label || l.text || l.price) }));
 
 async function load(id: number) {
   const q = Number.isSafeInteger(id) ? (await rows("quotes", "id=?", id))[0] : undefined;
@@ -57,9 +70,8 @@ async function load(id: number) {
 async function details(q: any) {
   const customer = await customerOf(q.customerId);
   return {
-    ...q, status: shownStatus(q), customerName: customer ? customer.companyName || customer.name : q.prospectCompany || q.prospectName,
-    isProspect: !q.customerId, items: await rows("quote_items", "quote_id=? ORDER BY sort_order,id", q.id),
-    activity: await rows("quote_activity", "quote_id=? ORDER BY id DESC", q.id),
+    ...q, sections: sectionsOf(q), status: shownStatus(q), customerName: customer ? customer.companyName || customer.name : q.prospectCompany || q.prospectName,
+    isProspect: !q.customerId, activity: await rows("quote_activity", "quote_id=? ORDER BY id DESC", q.id),
   };
 }
 const activity = (quoteId: number, type: string, actor: string, detail = "") =>
@@ -90,18 +102,15 @@ export function saveQuote(input: unknown, id: number | undefined, actor: string)
     const property = d.propertyId ? (await rows("properties", "id=?", d.propertyId))[0] : null;
     if (d.propertyId && !property) fail(404, "Property not found");
     if (property && property.customerId !== d.customerId) fail(400, "That property belongs to a different customer.");
-    if (!d.items.length) fail(400, "Add at least one line item.");
-    const { lines, subtotal } = await checkedLines(d.items, d.rateType, d.propertyId);
-    const total = subtotal - cents(d.discountAmount) + cents(d.travelFee) + cents(d.rushFee);
-    if (total < 0 || total > 1000000000) fail(400, "Quote total is invalid.");
+    const sections = tidy(d.sections);
+    if (!sections.some(s => s.price || s.lines.length)) fail(400, "Add at least one service.");
 
     const prospect = customer
       ? { prospectName: "", prospectCompany: "", prospectEmail: "", prospectPhone: "", prospectAddressLine1: "", prospectAddressLine2: "", prospectCity: "", prospectState: "", prospectZip: "" }
       : { prospectName: d.prospectName, prospectCompany: d.prospectCompany, prospectEmail: d.prospectEmail, prospectPhone: d.prospectPhone, prospectAddressLine1: d.prospectAddressLine1, prospectAddressLine2: d.prospectAddressLine2, prospectCity: d.prospectCity, prospectState: d.prospectState, prospectZip: d.prospectZip };
     const address = property ? [property.name, property.addressLine1, property.addressLine2, `${property.city}, ${property.state} ${property.zip}`].filter(Boolean).join("\n") : "";
-    const values: any[] = [d.customerId, d.propertyId, ...Object.values(prospect), address, d.rateType, d.issueDate, d.validUntil,
-      dollars(subtotal), d.discountAmount, d.travelFee, d.rushFee, dollars(total), d.notes, d.internalNotes];
-    const columns = "customer_id=?,property_id=?,prospect_name=?,prospect_company=?,prospect_email=?,prospect_phone=?,prospect_address_line1=?,prospect_address_line2=?,prospect_city=?,prospect_state=?,prospect_zip=?,property_address=?,rate_type=?,issue_date=?,valid_until=?,subtotal=?,discount_amount=?,travel_fee=?,rush_fee=?,total=?,notes=?,internal_notes=?";
+    const values: any[] = [d.customerId, d.propertyId, ...Object.values(prospect), address, d.attention, d.houseSpecs, d.issueDate, d.validUntil, JSON.stringify(sections), d.notes, d.internalNotes];
+    const columns = "customer_id=?,property_id=?,prospect_name=?,prospect_company=?,prospect_email=?,prospect_phone=?,prospect_address_line1=?,prospect_address_line2=?,prospect_city=?,prospect_state=?,prospect_zip=?,property_address=?,attention=?,house_specs=?,issue_date=?,valid_until=?,sections=?,notes=?,internal_notes=?";
 
     if (old) {
       await db.run(`UPDATE quotes SET ${columns},updated_at=? WHERE id=?`, ...values, now(), id!);
@@ -118,11 +127,6 @@ export function saveQuote(input: unknown, id: number | undefined, actor: string)
         id, number, randomBytes(32).toString("hex"), d.requestKey ?? null, now(), now(), ...values);
       await activity(id, "created", actor);
     }
-
-    await db.run("DELETE FROM quote_items WHERE quote_id=?", id!);
-    for (const l of lines)
-      await db.run("INSERT INTO quote_items (quote_id,description,description_snapshot,item_type,quantity,unit_price,amount,sort_order,source_property_service_id,is_auto_added,line_item_type) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        id!, l.description, l.descriptionSnapshot ?? null, l.itemType, l.quantity, l.unitPrice, l.amount, l.sortOrder, l.sourcePropertyServiceId ?? null, l.isAutoAdded ? 1 : 0, l.lineItemType);
     return details(await load(id!));
   });
 }
@@ -156,43 +160,42 @@ async function ensureProperty(q: any, customerId: number, chosen: number | null,
   return id;
 }
 
-async function createInvoice(id: number, actor: string) {
+async function createInvoice(id: number, input: unknown, actor: string) {
+  const d = invoiceSchema.parse(input);
   return db.tx(async () => {
     await lock(id);
     const q = await load(id);
     if (q.status !== "accepted") fail(409, "Only an accepted quote can become an invoice.");
-    if (q.invoiceId) {
-      const live = (await rows("invoices", "id=? AND status!='canceled'", q.invoiceId))[0];
-      if (live) return { id: live.id };
-    }
     const customerId = await ensureCustomer(q, actor);
-    const items = await rows("quote_items", "quote_id=? ORDER BY sort_order,id", q.id);
+    // The latest job is linked only if it's finished and unbilled, so it can't be invoiced again.
     const job = q.jobId ? (await rows("jobs", "id=?", q.jobId))[0] : null;
-    const terms = (await rows("app_settings", "1=1 ORDER BY id LIMIT 1"))[0]?.defaultPaymentTermsDays ?? 15;
+    const billed = job ? (await rows("invoices", "job_id=? AND status!='canceled'", job.id)).length > 0 : false;
+    const terms = (await businessOf())?.defaultPaymentTermsDays ?? 15;
     const invoice = await saveInvoice({
-      customerId, propertyId: q.propertyId, jobId: job?.status === "completed" ? job.id : null, issueDate: today(), dueDate: addDays(today(), terms), rateType: q.rateType,
-      notes: q.notes, internalNotes: [`From quote ${q.quoteNumber}.`, q.internalNotes].filter(Boolean).join("\n"),
-      discountAmount: q.discountAmount, travelFee: q.travelFee, rushFee: q.rushFee,
-      // Add-on links are dropped: a quote's prices stand even if the property's services changed since.
-      items: items.map(i => ({ description: i.description, descriptionSnapshot: i.descriptionSnapshot, itemType: i.itemType, quantity: i.quantity, unitPrice: i.unitPrice, isAutoAdded: !!i.isAutoAdded, lineItemType: i.lineItemType, sourcePropertyServiceId: null })),
+      customerId, propertyId: q.propertyId, jobId: job?.status === "completed" && !billed ? job.id : null, issueDate: today(), dueDate: addDays(today(), terms), rateType: "custom",
+      notes: "", internalNotes: `From quote ${q.quoteNumber}.`, discountAmount: 0, travelFee: 0, rushFee: 0, requestKey: d.requestKey,
+      items: d.lines.map(l => ({ ...l, itemType: "service", lineItemType: "manual", isAutoAdded: false })),
     }, undefined, actor);
-    await db.run("UPDATE quotes SET invoice_id=?,updated_at=? WHERE id=?", invoice.id, now(), q.id);
-    await activity(q.id, "invoice_created", actor, invoice.invoiceNumber);
+    if (invoice.id !== q.invoiceId) {
+      await db.run("UPDATE quotes SET invoice_id=?,updated_at=? WHERE id=?", invoice.id, now(), q.id);
+      await activity(q.id, "invoice_created", actor, invoice.invoiceNumber);
+    }
     return { id: invoice.id };
   });
 }
 
 async function createJob(id: number, input: unknown, actor: string) {
-  const d = scheduleSchema.parse(input);
+  const d = jobSchema.parse(input);
   return db.tx(async () => {
     await lock(id);
     const q = await load(id);
     if (q.status !== "accepted") fail(409, "Only an accepted quote can become a job.");
-    if (q.jobId) return { id: q.jobId };
     const customerId = await ensureCustomer(q, actor);
     const propertyId = await ensureProperty(q, customerId, d.propertyId, actor);
-    const jobId = await db.insertId(`INSERT INTO jobs (property_id,customer_id,job_type,scheduled_date,scheduled_time,duration_minutes,status,internal_notes,customer_notes,price,rate_type)
-      VALUES (?,?,?,?,?,?,'scheduled',?,?,?,?)`, propertyId, customerId, d.jobType, d.scheduledDate, d.scheduledTime, d.durationMinutes, `From quote ${q.quoteNumber}.`, q.notes || null, q.total, q.rateType);
+    const price = d.lines.reduce((n, l) => n + cents(l.quantity * l.unitPrice), 0) / 100;
+    const notes = `From quote ${q.quoteNumber}: ${d.lines.map(l => l.description).join("; ")}`;
+    const jobId = await db.insertId(`INSERT INTO jobs (property_id,customer_id,job_type,scheduled_date,scheduled_time,duration_minutes,status,internal_notes,price,rate_type)
+      VALUES (?,?,?,?,?,?,'scheduled',?,?,'custom')`, propertyId, customerId, d.jobType, d.scheduledDate, d.scheduledTime, d.durationMinutes, notes, price);
     await db.run("UPDATE quotes SET job_id=?,updated_at=? WHERE id=?", jobId, now(), q.id);
     await activity(q.id, "job_created", actor, `Job #${jobId}`);
     return { id: jobId };
@@ -204,10 +207,10 @@ async function sendPdf(res: Response, q: any, inline: boolean) {
     name: q.prospectName, companyName: q.prospectCompany, email: q.prospectEmail, phone: q.prospectPhone,
     billingAddressLine1: q.prospectAddressLine1, billingAddressLine2: q.prospectAddressLine2, billingCity: q.prospectCity, billingState: q.prospectState, billingZip: q.prospectZip,
   };
-  const business = (await rows("app_settings", "1=1 ORDER BY id LIMIT 1"))[0];
+  const business = await businessOf();
   const invoice = { ...q, invoiceNumber: q.quoteNumber, dueDate: q.validUntil, status: shownStatus(q), amountPaid: 0, taxAmount: 0 };
-  const pdf = await renderInvoicePdf({ invoice, customer, business, serviceProperty: q.propertyAddress, quote: true,
-    items: await rows("quote_items", "quote_id=? ORDER BY sort_order,id", q.id) });
+  const pdf = await renderInvoicePdf({ invoice, customer, business, serviceProperty: q.propertyAddress, items: [],
+    quote: { sections: sectionsOf(q), houseSpecs: q.houseSpecs, attention: q.attention } });
   res.set({ "Content-Type": "application/pdf", "Content-Length": String(pdf.length),
     "Content-Disposition": pdfDisposition(invoicePdfFilename(invoice, customer, business, "Quote"), inline),
     "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff" });
@@ -224,14 +227,12 @@ async function byToken(token: string) {
 /** Internal notes, activity and links to the business's own records never leave through here. */
 async function publicView(q: any) {
   const customer = await customerOf(q.customerId);
-  const business = (await rows("app_settings", "1=1 ORDER BY id LIMIT 1"))[0];
+  const business = await businessOf();
   return {
     quoteNumber: q.quoteNumber, status: shownStatus(q), issueDate: q.issueDate, validUntil: q.validUntil, respondedAt: q.respondedAt, responseName: q.responseName,
-    customerName: customer ? customer.companyName || customer.name : q.prospectCompany || q.prospectName,
+    customerName: customer ? customer.companyName || customer.name : q.prospectCompany || q.prospectName, attention: q.attention, houseSpecs: q.houseSpecs,
     propertyAddress: q.propertyAddress || [q.prospectAddressLine1, q.prospectAddressLine2, [q.prospectCity, [q.prospectState, q.prospectZip].filter(Boolean).join(" ")].filter(Boolean).join(", ")].filter(Boolean).join("\n"),
-    subtotal: q.subtotal, discountAmount: q.discountAmount, travelFee: q.travelFee, rushFee: q.rushFee, total: q.total, notes: q.notes,
-    items: (await rows("quote_items", "quote_id=? ORDER BY sort_order,id", q.id)).map(({ description, descriptionSnapshot, quantity, unitPrice, amount }) => ({ description, descriptionSnapshot, quantity, unitPrice, amount })),
-    businessName: business?.businessName, businessEmail: business?.businessEmail, businessPhone: business?.businessPhone,
+    sections: sectionsOf(q), notes: q.notes, businessName: business?.businessName, businessEmail: business?.businessEmail, businessPhone: business?.businessPhone,
   };
 }
 
@@ -266,10 +267,20 @@ export function registerPublicQuotes(app: Express) {
 export function registerQuotes(app: Express) {
   const actor = (res: Response) => res.locals.user?.email || "Workspace user";
 
+  app.get("/api/quote-templates", async (_req, res) => res.json((await rows("quote_templates", "1=1 ORDER BY name")).map(t => ({ id: t.id, name: t.name, sections: sectionsOf(t) }))));
+  app.put("/api/quote-templates", async (req, res) => {
+    const d = templateSchema.parse(req.body);
+    const sections = tidy(d.sections);
+    if (!sections.length) fail(400, "A template needs at least one section.");
+    const saved = await db.run(`INSERT INTO quote_templates (name,sections,updated_at,updated_by) VALUES (?,?,?,?)
+      ON CONFLICT (name) DO UPDATE SET sections=EXCLUDED.sections, updated_at=EXCLUDED.updated_at, updated_by=EXCLUDED.updated_by RETURNING id`, d.name, JSON.stringify(sections), now(), actor(res));
+    res.json({ id: saved.rows[0].id, name: d.name, sections });
+  });
+
   app.get("/api/quotes", async (_req, res) => {
     const list = await db.all(`SELECT q.*, COALESCE(NULLIF(c.company_name,''), c.name) customer_label FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id ORDER BY q.id DESC`);
     res.json(list.map(camel).map(q => ({
-      id: q.id, quoteNumber: q.quoteNumber, issueDate: q.issueDate, validUntil: q.validUntil, total: q.total, status: shownStatus(q),
+      id: q.id, quoteNumber: q.quoteNumber, issueDate: q.issueDate, validUntil: q.validUntil, status: shownStatus(q), propertyAddress: q.propertyAddress || q.prospectAddressLine1,
       customerId: q.customerId, customerName: q.customerLabel || q.prospectCompany || q.prospectName, isProspect: !q.customerId,
     })));
   });
@@ -330,6 +341,6 @@ export function registerQuotes(app: Express) {
     res.status(204).send();
   });
 
-  app.post("/api/quotes/:id/invoice", async (req, res) => res.status(201).json(await createInvoice((await load(Number(req.params.id))).id, actor(res))));
+  app.post("/api/quotes/:id/invoice", async (req, res) => res.status(201).json(await createInvoice((await load(Number(req.params.id))).id, req.body, actor(res))));
   app.post("/api/quotes/:id/job", async (req, res) => res.status(201).json(await createJob((await load(Number(req.params.id))).id, req.body, actor(res))));
 }
