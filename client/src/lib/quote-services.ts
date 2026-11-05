@@ -24,5 +24,5 @@ export function houseSpecs(p: any, beds: number) {
   const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
   const parts = [p.maxOccupancy > 0 && plural(p.maxOccupancy, "guest"), p.bedrooms > 0 && plural(p.bedrooms, "bedroom"), beds > 0 && plural(beds, "bed"),
     p.fullBathrooms > 0 && `${p.fullBathrooms} full bathroom${p.fullBathrooms === 1 ? "" : "s"}`, p.halfBathrooms > 0 && `${p.halfBathrooms} half bathroom${p.halfBathrooms === 1 ? "" : "s"}`].filter(Boolean) as string[];
-  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")}, & ${parts[parts.length - 1]}` : parts.join("");
+  return parts.length > 2 ? `${parts.slice(0, -1).join(", ")}, & ${parts[parts.length - 1]}` : parts.join(" & ");
 }
