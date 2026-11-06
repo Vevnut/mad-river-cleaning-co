@@ -40,7 +40,7 @@ export const customers = pgTable("customers", {
   billingZip: text("billing_zip").notNull(),
   notes: text("notes"),
   taxExempt: flag("tax_exempt").notNull().default(false),
-  createdAt: text("created_at").notNull().default(new Date().toISOString()),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const insertCustomerSchema = createInsertSchema(customers).omit({
@@ -285,7 +285,7 @@ export const stays = pgTable("stays", {
   checkOutDate: text("check_out_date").notNull(),
   status: text("status", { enum: ["confirmed", "tentative", "canceled"] }).notNull().default("confirmed"),
   notes: text("notes"),
-  createdAt: text("created_at").notNull().default(new Date().toISOString()),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const insertStaySchema = createInsertSchema(stays).omit({ id: true, createdAt: true });
@@ -349,7 +349,7 @@ export const notes = pgTable("notes", {
   authorStaffId: integer("author_staff_id").references(() => staff.id),
   body: text("body").notNull(),
   pinned: flag("pinned").notNull().default(false),
-  createdAt: text("created_at").notNull().default(new Date().toISOString()),
+  createdAt: text("created_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const insertNoteSchema = createInsertSchema(notes).omit({ id: true, createdAt: true });
@@ -366,7 +366,7 @@ export const attachments = pgTable("attachments", {
   fileName: text("file_name").notNull(),
   filePath: text("file_path").notNull(),
   category: text("category", { enum: ["photo", "document"] }).notNull(),
-  uploadedAt: text("uploaded_at").notNull().default(new Date().toISOString()),
+  uploadedAt: text("uploaded_at").notNull().$defaultFn(() => new Date().toISOString()),
 });
 
 export const insertAttachmentSchema = createInsertSchema(attachments).omit({

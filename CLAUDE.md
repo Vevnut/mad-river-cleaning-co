@@ -20,6 +20,7 @@ npx tsx tests/revenue.test.ts           # monthly and weekly revenue totals
 npx tsx tests/invoice-delete.test.ts    # three-step invoice deletion rules
 npx tsx tests/invoice-photos.test.ts    # photos on invoices: customer link, PDF, limits, sign-in
 npx tsx tests/quotes.test.ts            # rate-sheet quotes: customer link, templates, prospects, invoices and jobs
+npx tsx tests/stays.test.ts             # new stays, customers and notes get their dates from the code
 npx tsx tests/expenses.test.ts          # mileage, supply costs and receipt photos
 npx tsx tests/subcontractors.test.ts    # subcontractors, job pay, payments, bed counts
 npx tsx tests/upgrade-backup.test.ts    # full DB copy before any pending migration
