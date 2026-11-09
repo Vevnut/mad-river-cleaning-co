@@ -35,6 +35,8 @@ import { registerJobPhotos } from "./job-photos";
 import { registerInvoicePhotos } from "./invoice-photos";
 import { registerPublicQuotes, registerQuotes } from "./quotes";
 import { registerExpenses } from "./expenses";
+import { registerUpkeep } from "./upkeep";
+import { registerSupplies } from "./supplies";
 import { registerSubcontractors } from "./subcontractors";
 import { registerCalendar, registerPublicCalendar } from "./calendar";
 import { registerCleaner } from "./cleaner";
@@ -59,6 +61,8 @@ export async function registerRoutes(
   registerBilling(app);
   registerJobPhotos(app);
   registerExpenses(app);
+  registerUpkeep(app);
+  registerSupplies(app);
   registerSubcontractors(app);
   registerCalendar(app);
   registerCleaner(app);

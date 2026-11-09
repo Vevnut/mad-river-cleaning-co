@@ -19,6 +19,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { PropertyFormDialog } from "@/components/properties/property-form-dialog";
 import { formatMoney, formatDate } from "@/lib/format";
 import { ServiceSettings, PropertyInvoices } from "@/components/service-settings";
+import { UpkeepCard } from "@/components/properties/upkeep-card";
 
 export default function PropertyDetailPage() {
   const params = useParams<{ id: string }>();
@@ -163,6 +164,7 @@ export default function PropertyDetailPage() {
         <div><p className="text-muted-foreground">Owner rate</p><p className="font-semibold text-xl mt-1">{property.ownerRate == null ? "Not set" : formatMoney(property.ownerRate)}</p><p>{property.ownerRateName}</p></div>
         {property.invoiceNotes && <p className="sm:col-span-2 text-muted-foreground whitespace-pre-wrap">Default invoice notes: {property.invoiceNotes}</p>}
       </CardContent></Card>
+      <UpkeepCard propertyId={propertyId} />
       <ServiceSettings propertyId={propertyId} />
       <PropertyInvoices propertyId={propertyId} />
       <Card className="border-status-partial/40 bg-status-partial-bg/30">

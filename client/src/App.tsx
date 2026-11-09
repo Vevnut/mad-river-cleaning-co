@@ -29,6 +29,8 @@ import QuoteDetailPage from "@/pages/quote-detail";
 import QuoteNewPage from "@/pages/quote-new";
 import ReportsPage from "@/pages/reports";
 import ExpensesPage from "@/pages/expenses";
+import UpkeepPage from "@/pages/upkeep";
+import SuppliesPage from "@/pages/supplies";
 import SubcontractorsPage from "@/pages/subcontractors";
 import SubcontractorDetailPage from "@/pages/subcontractor-detail";
 import SettingsPage from "@/pages/settings";
@@ -66,6 +68,8 @@ function AppRouter({
       <Route path="/quotes/:id" component={QuoteDetailPage} />
       <Route path="/quotes" component={QuotesListPage} />
       <Route path="/expenses" component={ExpensesPage} />
+      <Route path="/deep-cleaning" component={UpkeepPage} />
+      <Route path="/supplies" component={SuppliesPage} />
       <Route path="/subcontractors" component={SubcontractorsPage} />
       <Route path="/subcontractors/:id" component={SubcontractorDetailPage} />
       <Route path="/reports" component={ReportsPage} />

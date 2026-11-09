@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import {
   LayoutDashboard, Users, Home, CalendarDays, ClipboardList,
-  Receipt, FileSignature, BarChart3, Settings, BedDouble, Wallet, HardHat,
+  Receipt, FileSignature, BarChart3, Settings, BedDouble, Wallet, HardHat, Sparkles, Package,
 } from "lucide-react";
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent, SidebarGroupLabel,
@@ -17,6 +17,8 @@ const NAV_ITEMS = [
   { title: "Scheduling", url: "/scheduling", icon: CalendarDays, testId: "scheduling" },
   { title: "Stays", url: "/stays", icon: BedDouble, testId: "stays" },
   { title: "Jobs", url: "/jobs", icon: ClipboardList, testId: "jobs" },
+  { title: "Deep Cleaning", url: "/deep-cleaning", icon: Sparkles, testId: "deep-cleaning" },
+  { title: "Supplies", url: "/supplies", icon: Package, testId: "supplies" },
   { title: "Quotes", url: "/quotes", icon: FileSignature, testId: "quotes" },
   { title: "Invoices", url: "/invoices", icon: Receipt, testId: "invoices" },
   { title: "Expenses", url: "/expenses", icon: Wallet, testId: "expenses" },
