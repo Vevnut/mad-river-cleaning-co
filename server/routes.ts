@@ -37,6 +37,7 @@ import { registerPublicQuotes, registerQuotes } from "./quotes";
 import { registerExpenses } from "./expenses";
 import { registerUpkeep } from "./upkeep";
 import { registerSupplies } from "./supplies";
+import { registerJobIssues } from "./job-issues";
 import { registerSubcontractors } from "./subcontractors";
 import { registerCalendar, registerPublicCalendar } from "./calendar";
 import { registerCleaner } from "./cleaner";
@@ -63,6 +64,7 @@ export async function registerRoutes(
   registerExpenses(app);
   registerUpkeep(app);
   registerSupplies(app);
+  registerJobIssues(app);
   registerSubcontractors(app);
   registerCalendar(app);
   registerCleaner(app);

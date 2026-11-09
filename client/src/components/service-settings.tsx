@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Badge } from "@/components/ui/badge";
 import { Field, Choice, behaviorOptions } from "@/components/billing-fields";
 import { formatMoney } from "@/lib/format";
+import { FoldBody, FoldToggle, useFolded } from "@/components/fold";
 
 const initial = { name: "", description: "", category: "Cleaning", defaultPrice: 0, defaultQuantity: 1, unit: "service", active: true, defaultInclusionBehavior: "suggested", taxable: false, sortOrder: 0 };
 const initialProperty = { serviceId: null, customName: "", customDescription: "", customPrice: "", defaultQuantity: 1, enabled: true, invoiceBehavior: "suggested", internalNotes: "", excludesPropertyServiceId: null, saveToCatalog: true, category: "Other" };
@@ -25,6 +26,7 @@ const commonJobs = [
   { label: "Special task", name: "", category: "Other", description: "" },
 ];
 export function ServiceSettings({ propertyId }: { propertyId?: number }) {
+  const folded = useFolded();
   const [edit, setEdit] = useState<any>(null), [busy, setBusy] = useState(false);
   const [showLibrary, setShowLibrary] = useState(false), [search, setSearch] = useState("");
   const { toast } = useToast();
@@ -49,12 +51,12 @@ export function ServiceSettings({ propertyId }: { propertyId?: number }) {
     } catch (e: any) { toast({ title: "Could not save service", description: e.message, variant: "destructive" }); } finally { setBusy(false); }
   };
   return <Card>
-    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base">{propertyId ? "Services & Add-ons" : "Common job library"}</CardTitle>
-      <p className="text-sm text-muted-foreground mt-1">{propertyId ? "Common jobs, property-specific prices, and recurring charges." : "Your common job library. Reuse services across properties with individual prices."}</p></div>
-      <div className="flex flex-wrap gap-2">{propertyId && <Button variant="outline" onClick={() => setShowLibrary(v => !v)} aria-expanded={showLibrary}>{showLibrary ? "Hide common jobs" : "Browse common jobs"}</Button>}
-        <Button onClick={() => start()}>Create common job</Button></div>
+    <CardHeader className="flex-row flex-wrap items-center justify-between gap-3"><div><CardTitle className="text-base flex items-center gap-2"><FoldToggle />{propertyId ? "Services & Add-ons" : "Common job library"}</CardTitle>
+      {!folded && <p className="text-sm text-muted-foreground mt-1">{propertyId ? "Common jobs, property-specific prices, and recurring charges." : "Your common job library. Reuse services across properties with individual prices."}</p>}</div>
+      {!folded && <div className="flex flex-wrap gap-2">{propertyId && <Button variant="outline" onClick={() => setShowLibrary(v => !v)} aria-expanded={showLibrary}>{showLibrary ? "Hide common jobs" : "Browse common jobs"}</Button>}
+        <Button onClick={() => start()}>Create common job</Button></div>}
     </CardHeader>
-    <CardContent className="space-y-3">
+    <FoldBody><CardContent className="space-y-3">
       {error && <p role="alert" className="text-destructive">{(error as Error).message}</p>}
       <div className="rounded-md border bg-muted/30 p-3 space-y-2">
         <p className="text-sm font-medium">Start with a common task</p>
@@ -111,13 +113,14 @@ export function ServiceSettings({ propertyId }: { propertyId?: number }) {
           <Button type="submit" disabled={busy}>{busy ? "Saving…" : "Save service"}</Button>
         </form>}
       </DialogContent></Dialog>
-    </CardContent>
+    </CardContent></FoldBody>
   </Card>;
 }
 export function PropertyInvoices({ propertyId }: { propertyId: number }) {
   const { data = [] } = useQuery<any[]>({ queryKey: ["/api/invoices", { propertyId }], queryFn: async () => (await apiRequest("GET", `/api/invoices?propertyId=${propertyId}`)).json() });
-  return <Card><CardHeader className="flex-row flex-wrap items-center justify-between gap-3"><CardTitle className="text-base">Invoices</CardTitle><Link href={`/invoices/new?propertyId=${propertyId}`}><Button>Create invoice</Button></Link></CardHeader>
-    <CardContent>{!data.length ? <p className="text-sm text-muted-foreground">No invoices for this property yet.</p> : data.map(i => <Link href={`/invoices/${i.id}`} key={i.id} className="flex justify-between gap-3 py-3 border-b text-sm"><span>{i.invoiceNumber}<span className="text-muted-foreground ml-2">{i.status}</span></span><span>{formatMoney(i.total)}</span></Link>)}</CardContent></Card>;
+  const folded = useFolded();
+  return <Card><CardHeader className="flex-row flex-wrap items-center justify-between gap-3 space-y-0"><CardTitle className="text-base flex items-center gap-2"><FoldToggle />Invoices{folded && data.length > 0 && <span className="text-sm font-normal text-muted-foreground">· {data.length}</span>}</CardTitle>{!folded && <Link href={`/invoices/new?propertyId=${propertyId}`}><Button>Create invoice</Button></Link>}</CardHeader>
+    <FoldBody><CardContent>{!data.length ? <p className="text-sm text-muted-foreground">No invoices for this property yet.</p> : data.map(i => <Link href={`/invoices/${i.id}`} key={i.id} className="flex justify-between gap-3 py-3 border-b text-sm"><span>{i.invoiceNumber}<span className="text-muted-foreground ml-2">{i.status}</span></span><span>{formatMoney(i.total)}</span></Link>)}</CardContent></FoldBody></Card>;
 }
 export function BillingSetup() {
   const { data } = useQuery<any>({ queryKey: ["/api/integrations"] });

@@ -4,6 +4,8 @@ import { db } from "./db";
 import { credentials, createAccount, setPassword, endSessions } from "./auth";
 import { subcontractorPay } from "./subcontractors";
 import { photoUpload, listJobPhotos, addJobPhoto, findJobPhoto, sendJobPhoto, deleteJobPhoto } from "./job-photos";
+import { UPKEEP_KEYS, HOT_TUB_DRAIN } from "@shared/upkeep";
+import { supplyRow, SUPPLY_SELECT, adjustSupply } from "./supplies";
 
 /**
  * Cleaner logins. A cleaner account is linked to one staff member or one
@@ -93,8 +95,30 @@ async function detail(r: any, m: Me) {
     checklistItems: (await db.all("SELECT id, label, is_completed FROM service_checklists WHERE job_id=? ORDER BY sort_order, id", r.id))
       .map(k => ({ id: k.id, label: k.label, isCompleted: !!k.is_completed })),
     stays: { lastCheckOut: stay(lastOut), nextCheckIn: stay(nextIn) },
+    startedAt: r.started_at ?? null,
+    upkeep: await upkeepFor(r, m),
+    // Only the supplies kept at this house; the office's own stock stays in the office.
+    supplies: (await db.all(`${SUPPLY_SELECT} WHERE s.property_id=? ORDER BY lower(s.name), s.id`, r.property_id))
+      .map(s => { const { updatedBy, flaggedBy, notes, ...rest } = supplyRow(s); return { ...rest, notes, flaggedByMe: flaggedBy === m.email }; }),
+    issues: (await db.all("SELECT * FROM job_issues WHERE job_id=? ORDER BY created_at, id", r.id))
+      .map(i => ({ id: Number(i.id), body: i.body, createdAt: i.created_at, mine: i.created_by === m.email, resolved: !!i.resolved_at })),
   };
 }
+
+/** Deep-cleaning and hot tub status at the job's property, and what was ticked on this job. */
+async function upkeepFor(r: any, m: Me) {
+  const p = (await db.get("SELECT has_hot_tub FROM properties WHERE id=?", r.property_id))!;
+  const last = await db.all("SELECT task, max(done_on) last FROM upkeep_log WHERE property_id=? GROUP BY task", r.property_id);
+  const onJob = await db.all("SELECT task, created_by FROM upkeep_log WHERE job_id=?", r.id);
+  return {
+    hasHotTub: !!Number(p.has_hot_tub),
+    lastDone: Object.fromEntries(last.map(x => [x.task, x.last])),
+    // Ticked on this job. A cleaner can untick only what they ticked.
+    thisJob: Object.fromEntries(onJob.map(x => [x.task, { mine: x.created_by === m.email }])),
+  };
+}
+/** The day work on a job counts as done: the job's date, or today if the job is still ahead. */
+const doneDay = (r: any) => (r.scheduled_date < today() ? r.scheduled_date : today());
 
 // Photos as a cleaner sees them: whether they added it, not who in the office did.
 const photos = async (jobId: number, m: Me) => (await listJobPhotos(jobId)).map(({ createdBy, ...p }: any) => ({ ...p, mine: createdBy === m.email }));
@@ -105,6 +129,10 @@ async function myPhoto(m: Me, id: number) {
   return photo;
 }
 
+const upkeepSchema = z.object({ task: z.enum(UPKEEP_KEYS as [string, ...string[]]), done: z.boolean() });
+const deltaSchema = z.object({ delta: z.number().int().min(-100).max(100).refine(n => n !== 0, "Enter how many to add or take away.") });
+const flagSchema = z.object({ low: z.boolean() });
+const issueSchema = z.object({ body: z.string().trim().min(1, "Write what's wrong.").max(2000) });
 const notesSchema = z.object({ damageNotes: z.string().max(4000).nullable().transform(v => v?.trim() || null) });
 const checkSchema = z.object({ isCompleted: z.boolean() });
 const parse = <T>(schema: z.ZodType<T>, body: unknown): T => {
@@ -163,6 +191,73 @@ export function registerCleaner(app: Express) {
     const info = await db.run("UPDATE service_checklists SET is_completed=? WHERE id=? AND job_id=?", isCompleted ? 1 : 0, Number(req.params.itemId), r.id);
     if (!info.changes) fail(404, "Checklist item not found");
     res.json(await detail(await myJob(m, r.id), m));
+  });
+
+  // "I'm here": marks the job in progress and stamps the start time once.
+  app.post("/api/cleaner/jobs/:id/start", async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
+    if (r.status === "completed") fail(409, "This job is already marked complete.");
+    await db.run("UPDATE jobs SET status='in_progress', started_at=coalesce(started_at, ?) WHERE id=?", new Date().toISOString(), r.id);
+    res.json(await detail(await myJob(m, r.id), m));
+  });
+
+  // Deep-cleaning tasks and the hot tub drain, ticked from the job.
+  app.post("/api/cleaner/jobs/:id/upkeep", async (req, res) => {
+    const m = await me(res), r = await openJob(m, Number(req.params.id));
+    const { task, done } = parse(upkeepSchema, req.body);
+    if (done) {
+      if (task === HOT_TUB_DRAIN.key && !Number((await db.get("SELECT has_hot_tub FROM properties WHERE id=?", r.property_id))!.has_hot_tub))
+        fail(400, "This property isn't set up with a hot tub. Contact the office.");
+      await db.tx(async () => {
+        if (!(await db.get("SELECT 1 FROM upkeep_log WHERE job_id=? AND task=?", r.id, task)))
+          await db.run("INSERT INTO upkeep_log (property_id,job_id,task,done_on,note,created_at,created_by) VALUES (?,?,?,?,?,?,?)",
+            r.property_id, r.id, task, doneDay(r), "", new Date().toISOString(), m.email);
+      });
+    } else {
+      const own = await db.run("DELETE FROM upkeep_log WHERE job_id=? AND task=? AND created_by=?", r.id, task, m.email);
+      if (!own.changes && (await db.get("SELECT 1 FROM upkeep_log WHERE job_id=? AND task=?", r.id, task)))
+        fail(403, "The office logged this one, so only the office can undo it.");
+    }
+    res.json(await detail(await myJob(m, r.id), m));
+  });
+
+  // Supplies at the house: count what's there, or flag something as running low.
+  app.post("/api/cleaner/jobs/:id/supplies/:supplyId/adjust", async (req, res) => {
+    const m = await me(res), r = await myJob(m, Number(req.params.id));
+    const { delta } = parse(deltaSchema, req.body);
+    if (!(await adjustSupply(Number(req.params.supplyId), delta, m.email, Number(r.property_id)))) fail(404, "That item isn't on this property's supplies list.");
+    res.json(await detail(await myJob(m, r.id), m));
+  });
+
+  app.post("/api/cleaner/jobs/:id/supplies/:supplyId/flag", async (req, res) => {
+    const m = await me(res), r = await myJob(m, Number(req.params.id));
+    const { low } = parse(flagSchema, req.body);
+    const info = await db.run("UPDATE supplies SET flagged_at=?, flagged_by=? WHERE id=? AND property_id=?",
+      low ? new Date().toISOString() : null, low ? m.email : null, Number(req.params.supplyId) || 0, r.property_id);
+    if (!info.changes) fail(404, "That item isn't on this property's supplies list.");
+    res.json(await detail(await myJob(m, r.id), m));
+  });
+
+  // Problems at the house, for the office. Allowed after invoicing too: a problem can turn up late.
+  app.post("/api/cleaner/jobs/:id/issues", async (req, res) => {
+    const m = await me(res), r = await myJob(m, Number(req.params.id));
+    const { body } = parse(issueSchema, req.body);
+    const open = Number((await db.get("SELECT count(*) n FROM job_issues WHERE job_id=? AND resolved_at IS NULL", r.id))!.n);
+    if (open >= 20) fail(400, "This job already has a lot of open messages. Call the office instead.");
+    await db.run("INSERT INTO job_issues (job_id,body,created_at,created_by,created_by_name) VALUES (?,?,?,?,?)", r.id, body, new Date().toISOString(), m.email, m.name);
+    res.status(201).json(await detail(await myJob(m, r.id), m));
+  });
+
+  // Finished jobs older than My jobs shows, up to a year back, and (subcontractors) payments received.
+  app.get("/api/cleaner/history", async (_req, res) => {
+    const m = await me(res), day = today();
+    const list = await db.all(`${JOBS} AND j.status IN ('completed','invoiced') AND j.scheduled_date>=@from AND j.scheduled_date<@to ORDER BY j.scheduled_date DESC, j.id DESC LIMIT 300`,
+      { ...who(m), from: addDays(day, -365), to: addDays(day, -PAST_DAYS) });
+    const payments = m.subcontractorId
+      ? (await db.all("SELECT paid_date, amount, method FROM subcontractor_payments WHERE subcontractor_id=? ORDER BY paid_date DESC, id DESC LIMIT 100", m.subcontractorId))
+        .map(p => ({ paidDate: p.paid_date, amount: Number(p.amount), method: p.method }))
+      : [];
+    res.json({ jobs: list.map(r => summary(r, m)), payments });
   });
 
   app.post("/api/cleaner/jobs/:id/complete", async (req, res) => {

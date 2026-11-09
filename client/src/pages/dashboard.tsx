@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useJobCrew } from "@/lib/job-crew";
+import { CleanerMessagesCard } from "@/components/jobs/cleaner-activity";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import {
@@ -104,6 +105,8 @@ export default function DashboardPage({ onNewCustomer, onNewProperty }: Dashboar
           </Button>
         </div>
       </div>
+
+      <CleanerMessagesCard />
 
       {/* KPI cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">

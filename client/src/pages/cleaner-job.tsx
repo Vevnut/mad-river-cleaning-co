@@ -14,8 +14,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { StatusBadge } from "@/components/status-badge";
 import { JobPhotos } from "@/components/jobs/job-photos";
-import { formatMoney } from "@/lib/format";
-import { type CleanerJob, type CleanerMe, LIVE, addressLine, bathsLine, bedsLine, dial, formatDay, formatTime, jobTypeLabel, mapsUrl } from "@/lib/cleaner";
+import { businessDate, formatMoney } from "@/lib/format";
+import { type CleanerJob, type CleanerMe, LIVE, addressLine, bathsLine, bedsLine, clockTime, dial, elapsed, formatDay, formatTime, jobTypeLabel, mapsUrl } from "@/lib/cleaner";
+import { DeepCleanSection, HouseSuppliesSection, IssuesSection } from "@/components/cleaner/job-extras";
 
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
@@ -47,6 +48,11 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
   const failed = (err: Error) => toast({ title: "Couldn't save", description: err.message, variant: "destructive" });
   const notes = useMutation({ mutationFn: (damageNotes: string) => send("PATCH", `/api/cleaner/jobs/${id}`, { damageNotes }), onSuccess: saved("Damage notes saved"), onError: failed });
   const complete = useMutation({ mutationFn: () => send("POST", `/api/cleaner/jobs/${id}/complete`), onSuccess: saved("Job marked complete"), onError: failed });
+  const start = useMutation({ mutationFn: () => send("POST", `/api/cleaner/jobs/${id}/start`), onSuccess: saved("Job started"), onError: failed });
+  // One path for the extra sections (deep cleaning, supplies, messages); resolves true when saved.
+  const extra = useMutation({ mutationFn: ({ path, body }: { path: string; body: unknown; message?: string }) => send("POST", path, body) });
+  const sendExtra = (path: string, body: unknown, message?: string) =>
+    extra.mutateAsync({ path, body, message }).then(updated => { saved(message)(updated); return true; }, err => { failed(err); return false; });
   const tick = useMutation({
     mutationFn: ({ itemId, isCompleted }: { itemId: number; isCompleted: boolean }) => send("PATCH", `/api/cleaner/jobs/${id}/checklist/${itemId}`, { isCompleted }),
     onSuccess: saved(), onError: failed,
@@ -60,6 +66,8 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
 
   const p = job.property, beds = bedsLine(p.beds);
   const canComplete = job.canEdit && (job.status === "scheduled" || job.status === "in_progress");
+  const canStart = job.canEdit && job.status === "scheduled";
+  const today = businessDate();
   const { lastCheckOut, nextCheckIn } = job.stays;
 
   return (
@@ -73,6 +81,9 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
           <span>{jobTypeLabel(job.jobType)}</span>
         </p>
         <p className="text-sm text-muted-foreground">For {job.customerName}{job.pay != null && <> · <span className="font-medium text-foreground">You earn {formatMoney(job.pay)}</span></>}</p>
+        {job.startedAt && <p className="text-sm text-muted-foreground" data-testid="text-cleaner-started">
+          Started {clockTime(job.startedAt)}{job.completedAt ? ` · finished ${clockTime(job.completedAt)} · ${elapsed(job.startedAt, job.completedAt)} on site` : ""}
+        </p>}
       </div>
 
       <Section icon={<MapPin className="h-4 w-4 text-primary" />} title="Address">
@@ -123,17 +134,23 @@ export default function CleanerJobPage({ params }: { params: { id: string } }) {
         </Section>
       )}
 
+      <DeepCleanSection job={job} today={today} send={sendExtra} busy={extra.isPending} />
+      <HouseSuppliesSection job={job} send={sendExtra} busy={extra.isPending} />
+
       <JobPhotos
         jobId={job.id} apiBase="/api/cleaner" readOnly={!job.canEdit} canDelete={photo => !!photo.mine}
         damageNotes={job.damageNotes} onSaveDamageNotes={damageNotes => notes.mutate(damageNotes)} saving={notes.isPending}
       />
 
+      <IssuesSection job={job} send={sendExtra} busy={extra.isPending} />
+
       {!job.canEdit && <p className="text-center text-sm text-muted-foreground">This job has been invoiced, so it can't be changed. Contact the office if something's wrong.</p>}
       {canComplete && (
         <div className="fixed inset-x-0 bottom-0 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
-          <div className="mx-auto max-w-2xl">
-            <Button className="w-full" size="lg" onClick={() => setConfirming(true)} disabled={complete.isPending} data-testid="button-cleaner-complete">
-              Mark job complete
+          <div className="mx-auto flex max-w-2xl gap-2">
+            {canStart && <Button className="flex-1" size="lg" onClick={() => start.mutate()} disabled={start.isPending} data-testid="button-cleaner-start">Start job</Button>}
+            <Button className="flex-1" size="lg" variant={canStart ? "outline" : "default"} onClick={() => setConfirming(true)} disabled={complete.isPending} data-testid="button-cleaner-complete">
+              {canStart ? "Mark complete" : "Mark job complete"}
             </Button>
           </div>
         </div>

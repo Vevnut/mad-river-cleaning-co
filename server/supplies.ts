@@ -19,13 +19,31 @@ const supplySchema = z.object({
   notes: z.string().trim().max(500).optional().default(""),
 });
 const round = (n: number) => Math.round(n * 100) / 100;
-const row = (r: any) => r && ({
+// "Low" is at or under the reorder level, or flagged by a cleaner at the house. A flag clears
+// when the office edits the item or anyone adds stock.
+export const supplyRow = (r: any) => r && ({
   id: Number(r.id), name: r.name, propertyId: r.property_id == null ? null : Number(r.property_id), propertyName: r.property_name ?? null,
   quantity: Number(r.quantity), unit: r.unit, reorderAt: r.reorder_at == null ? null : Number(r.reorder_at), notes: r.notes,
-  low: r.reorder_at != null && Number(r.quantity) <= Number(r.reorder_at), updatedAt: r.updated_at, updatedBy: r.updated_by,
+  low: !!r.flagged_at || (r.reorder_at != null && Number(r.quantity) <= Number(r.reorder_at)),
+  flaggedAt: r.flagged_at ?? null, flaggedBy: r.flagged_by ?? null, updatedAt: r.updated_at, updatedBy: r.updated_by,
 });
-const SELECT = "SELECT s.*, p.name property_name FROM supplies s LEFT JOIN properties p ON p.id=s.property_id";
+const row = supplyRow;
+export const SUPPLY_SELECT = "SELECT s.*, p.name property_name FROM supplies s LEFT JOIN properties p ON p.id=s.property_id";
+const SELECT = SUPPLY_SELECT;
 const get = async (id: number) => (Number.isSafeInteger(id) ? row(await db.get(`${SELECT} WHERE s.id=?`, id)) : undefined);
+
+/**
+ * Change a count by `delta`, stopping at zero. Adding stock clears a "running low" flag.
+ * With `propertyId`, only an item kept at that property changes. False when nothing matched.
+ */
+export async function adjustSupply(id: number, delta: number, actor: string, propertyId?: number) {
+  if (!Number.isSafeInteger(id)) return false;
+  const r = await db.run(`UPDATE supplies SET quantity=round(LEAST(GREATEST(quantity + ?::double precision, 0), 1000000)::numeric, 2),
+    flagged_at=CASE WHEN ?::double precision > 0 THEN NULL ELSE flagged_at END, flagged_by=CASE WHEN ?::double precision > 0 THEN NULL ELSE flagged_by END,
+    updated_at=?, updated_by=? WHERE id=? AND (?::bigint IS NULL OR property_id=?)`,
+    delta, delta, delta, new Date().toISOString(), actor, id, propertyId ?? null, propertyId ?? null);
+  return r.changes > 0;
+}
 
 async function parse(body: unknown) {
   const parsed = supplySchema.safeParse(body);
@@ -52,7 +70,7 @@ export function registerSupplies(app: Express) {
     const id = Number(req.params.id);
     if (!(await get(id))) fail(404, "Item not found");
     const c = await parse(req.body);
-    await db.run("UPDATE supplies SET name=?,property_id=?,quantity=?,unit=?,reorder_at=?,notes=?,updated_at=?,updated_by=? WHERE id=?",
+    await db.run("UPDATE supplies SET name=?,property_id=?,quantity=?,unit=?,reorder_at=?,notes=?,flagged_at=NULL,flagged_by=NULL,updated_at=?,updated_by=? WHERE id=?",
       c.name, c.property_id, c.quantity, c.unit, c.reorder_at, c.notes, new Date().toISOString(), actor(res), id);
     res.json(await get(id));
   });
@@ -62,10 +80,7 @@ export function registerSupplies(app: Express) {
     const id = Number(req.params.id);
     const parsed = z.object({ delta: z.number().finite().min(-1_000_000).max(1_000_000) }).safeParse(req.body);
     if (!parsed.success) fail(400, "Enter how many to add or take away.");
-    const r = Number.isSafeInteger(id)
-      ? await db.run("UPDATE supplies SET quantity=round(LEAST(GREATEST(quantity + ?::double precision, 0), 1000000)::numeric, 2), updated_at=?, updated_by=? WHERE id=?", parsed.data.delta, new Date().toISOString(), actor(res), id)
-      : { changes: 0 };
-    if (!r.changes) fail(404, "Item not found");
+    if (!(await adjustSupply(id, parsed.data.delta, actor(res)))) fail(404, "Item not found");
     res.json(await get(id));
   });
 

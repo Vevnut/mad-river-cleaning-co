@@ -7,6 +7,7 @@ import { MadRiverMark } from "@/components/logo";
 import { type CleanerMe, dial } from "@/lib/cleaner";
 import CleanerJobsPage from "@/pages/cleaner-jobs";
 import CleanerJobPage from "@/pages/cleaner-job";
+import CleanerHistoryPage from "@/pages/cleaner-history";
 
 /** The whole app for a cleaner login: their jobs, nothing else. Phone-first. */
 export function CleanerShell({ email }: { email: string }) {
@@ -34,6 +35,7 @@ export function CleanerShell({ email }: { email: string }) {
         <Switch>
           <Route path="/" component={CleanerJobsPage} />
           <Route path="/job/:id" component={CleanerJobPage} />
+          <Route path="/history" component={CleanerHistoryPage} />
           <Route><Redirect to="/" /></Route>
         </Switch>
       </main>

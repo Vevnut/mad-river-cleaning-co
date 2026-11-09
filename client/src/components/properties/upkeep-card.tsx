@@ -12,6 +12,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FoldBody, FoldToggle, useFolded } from "@/components/fold";
 
 type Entry = { id: number; task: string; doneOn: string; note: string; createdBy: string };
 type Upkeep = { propertyId: number; hasHotTub: boolean; lastDone: Record<string, string>; history: Entry[] };
@@ -36,6 +37,7 @@ export const refreshUpkeep = () => queryClient.invalidateQueries({ predicate: q 
 
 export function UpkeepCard({ propertyId }: { propertyId: number }) {
   const { toast } = useToast();
+  const folded = useFolded();
   const today = businessDate();
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [doneOn, setDoneOn] = useState(today);
@@ -76,10 +78,11 @@ export function UpkeepCard({ propertyId }: { propertyId: number }) {
 
   return <Card data-testid="card-upkeep">
     <CardHeader className="pb-3">
-      <CardTitle className="text-base flex items-center gap-2"><Sparkles className="h-4 w-4 text-muted-foreground" />Deep cleaning & hot tub</CardTitle>
-      <p className="text-sm text-muted-foreground">Each task is due {UPKEEP_DUE_DAYS} days after it was last done.</p>
+      <CardTitle className="text-base flex items-center gap-2"><FoldToggle /><Sparkles className="h-4 w-4 text-muted-foreground" />Deep cleaning & hot tub
+        {folded && <span className="text-sm font-normal text-muted-foreground">· {dueKeys.length} of {DEEP_CLEAN_TASKS.length} due{data.hasHotTub ? ` · hot tub ${upkeepState(drainLast, today) === "due" || !drainLast ? "drain due" : "ok"}` : ""}</span>}</CardTitle>
+      {!folded && <p className="text-sm text-muted-foreground">Each task is due {UPKEEP_DUE_DAYS} days after it was last done.</p>}
     </CardHeader>
-    <CardContent className="space-y-5 text-sm">
+    <FoldBody><CardContent className="space-y-5 text-sm">
       <div className="rounded-md border p-3 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="font-medium flex items-center gap-2"><Waves className="h-4 w-4 text-muted-foreground" />Hot tub</p>
@@ -134,6 +137,6 @@ export function UpkeepCard({ propertyId }: { propertyId: number }) {
           </li>)}
         </ul> : <p className="mt-2 text-muted-foreground">Nothing logged yet.</p>)}
       </div>
-    </CardContent>
+    </CardContent></FoldBody>
   </Card>;
 }

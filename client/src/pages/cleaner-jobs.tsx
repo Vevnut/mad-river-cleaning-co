@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { CheckCircle2, ChevronRight, Clock, ListChecks, MapPin, Navigation, RefreshCw } from "lucide-react";
+import { CheckCircle2, ChevronRight, Clock, History, ListChecks, MapPin, Navigation, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -132,6 +132,8 @@ export default function CleanerJobsPage() {
           </CardContent>
         </Card>
       )}
+
+      <Link href="/history"><Button variant="outline" className="h-11 w-full gap-1.5" data-testid="link-cleaner-history"><History className="h-4 w-4" /> {me?.pay ? "Past jobs & pay" : "Past jobs"}</Button></Link>
     </div>
   );
 }

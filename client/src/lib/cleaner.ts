@@ -28,7 +28,21 @@ export type CleanerJob = CleanerJobSummary & {
   };
   checklistItems: { id: number; label: string; isCompleted: boolean }[];
   stays: { lastCheckOut: CleanerStay; nextCheckIn: CleanerStay };
+  startedAt: string | null;
+  upkeep: { hasHotTub: boolean; lastDone: Record<string, string>; thisJob: Record<string, { mine: boolean }> };
+  supplies: CleanerSupply[];
+  issues: { id: number; body: string; createdAt: string; mine: boolean; resolved: boolean }[];
 };
+export type CleanerSupply = { id: number; name: string; quantity: number; unit: string; reorderAt: number | null; notes: string; low: boolean; flaggedAt: string | null; flaggedByMe: boolean };
+export type CleanerHistory = { jobs: CleanerJobSummary[]; payments: { paidDate: string; amount: number; method: string | null }[] };
+
+/** "2:05 PM" from an ISO timestamp, in the business's time zone. */
+export const clockTime = (iso: string) => new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone: "America/New_York" }).format(new Date(iso));
+/** "1 hr 25 min" between two ISO timestamps. */
+export function elapsed(from: string, to: string) {
+  const mins = Math.max(0, Math.round((Date.parse(to) - Date.parse(from)) / 60000));
+  return mins < 60 ? `${mins} min` : `${Math.floor(mins / 60)} hr${mins % 60 ? ` ${mins % 60} min` : ""}`;
+}
 
 const JOB_TYPES: Record<string, string> = {
   turnover: "Turnover", deep_clean: "Deep clean", inspection: "Inspection", one_time: "One-time clean", recurring: "Recurring clean", custom: "Clean",

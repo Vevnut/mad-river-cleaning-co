@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
-type Supply = { id: number; name: string; propertyId: number | null; propertyName: string | null; quantity: number; unit: string; reorderAt: number | null; notes: string; low: boolean };
+type Supply = { id: number; name: string; propertyId: number | null; propertyName: string | null; quantity: number; unit: string; reorderAt: number | null; notes: string; low: boolean; flaggedAt: string | null; flaggedBy: string | null };
 const OURS = "ours";
 const fmt = (n: number) => String(Math.round(n * 100) / 100);
 const refresh = () => queryClient.invalidateQueries({ queryKey: ["/api/supplies"] });
@@ -41,7 +41,7 @@ export default function SuppliesPage() {
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
         <h1 className="text-xl font-semibold" data-testid="text-page-title">Supplies</h1>
-        <p className="text-sm text-muted-foreground">What's on hand in your own stock and at each property. Set a reorder level to flag items running low.</p>
+        <p className="text-sm text-muted-foreground">What's on hand in your own stock and at each property. Set a reorder level to flag items running low. Cleaners can update counts and flag items at the houses they clean.</p>
       </div>
       <Button onClick={() => setEditing("new")} className="gap-1.5" data-testid="button-add-supply"><Plus className="h-4 w-4" />Add item</Button>
     </div>
@@ -61,7 +61,7 @@ export default function SuppliesPage() {
     </div> : <div className="rounded-md border overflow-x-auto"><Table className="min-w-[620px]">
       <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Location</TableHead><TableHead className="text-center">On hand</TableHead><TableHead>Reorder at</TableHead><TableHead className="w-10" /></TableRow></TableHeader>
       <TableBody>{shown.map(s => <TableRow key={s.id} data-testid={`row-supply-${s.id}`}>
-        <TableCell><span className="font-medium">{s.name}</span>{s.low && <Badge variant="outline" className="ml-2 bg-status-overdue-bg text-status-overdue border-transparent">Low</Badge>}{s.notes && <span className="block text-xs text-muted-foreground max-w-[260px] truncate">{s.notes}</span>}</TableCell>
+        <TableCell><span className="font-medium">{s.name}</span>{s.low && <Badge variant="outline" className="ml-2 bg-status-overdue-bg text-status-overdue border-transparent">Low</Badge>}{s.flaggedAt && <span className="block text-xs text-status-overdue">Flagged running low by {s.flaggedBy} · add stock or edit to clear</span>}{s.notes && <span className="block text-xs text-muted-foreground max-w-[260px] truncate">{s.notes}</span>}</TableCell>
         <TableCell className="whitespace-nowrap">{s.propertyName ?? "Our stock"}</TableCell>
         <TableCell><div className="flex items-center justify-center gap-1">
           <Button size="icon" variant="outline" className="h-8 w-8" aria-label={`One less ${s.name}`} disabled={adjust.isPending || s.quantity <= 0} onClick={() => adjust.mutate({ id: s.id, delta: -1 })}><Minus className="h-3.5 w-3.5" /></Button>

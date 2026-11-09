@@ -270,6 +270,6 @@ export const TABLES = [
   "organization", "app_settings", "staff", "customers", "contacts", "subcontractors", "job_templates", "properties",
   "schedules", "jobs", "service_checklists", "stays", "notes", "attachments", "service_catalog", "property_services",
   "invoices", "invoice_items", "invoice_photos", "quotes", "quote_items", "quote_activity", "quote_templates", "payments", "invoice_activity", "invoice_sends", "checkout_sessions", "webhook_events",
-  "deleted_invoices", "expenses", "expense_receipts", "job_photos", "job_subcontractors", "subcontractor_payments",
+  "deleted_invoices", "expenses", "expense_receipts", "job_photos", "job_issues", "job_subcontractors", "subcontractor_payments",
   "upkeep_log", "supplies", "calendar_feeds", "calendar_sources", "calendar_events", "auth_users", "auth_sessions", "auth_rate_limits", "maintenance_log",
 ] as const;

@@ -24,6 +24,7 @@ import {
 import { formatMoney, formatDate } from "@/lib/format";
 import { JobPhotos } from "@/components/jobs/job-photos";
 import { JobSubcontractor } from "@/components/jobs/job-subcontractor";
+import { CleanerActivity } from "@/components/jobs/cleaner-activity";
 
 const STATUS_ORDER: Job["status"][] = ["scheduled", "in_progress", "completed", "invoiced"];
 const STATUS_LABELS: Record<Job["status"], string> = {
@@ -440,6 +441,8 @@ export default function JobDetailPage() {
           />
         </CardContent>
       </Card>
+
+      <CleanerActivity jobId={jobId} />
 
       {/* Notes: internal vs customer-visible */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
